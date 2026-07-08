@@ -1,0 +1,13 @@
+# Copy this file to `android/key.properties` and fill in real values, then
+# generate the keystore (see command below). key.properties + the .jks file are
+# git-ignored — never commit them.
+#
+# Generate a release keystore (once):
+#   keytool -genkey -v -keystore ~/expnd-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias expnd
+#
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=expnd
+# Absolute path to the .jks file (or path relative to android/app):
+storeFile=/absolute/path/to/expnd-release.jks

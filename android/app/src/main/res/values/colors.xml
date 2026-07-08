@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0D0D0D</color>
+
+    <!-- Home-screen widget palette (mirrors ExpndColors). -->
+    <color name="widget_bg">#141414</color>
+    <color name="widget_ink">#0D0D0D</color>
+    <color name="widget_gold">#FFEB34</color>
+    <color name="widget_text">#FFFFFF</color>
+    <color name="widget_muted">#8A8A8A</color>
+    <color name="widget_divider">#262626</color>
+    <color name="widget_income">#34D399</color>
+    <color name="widget_expense">#FF5A5A</color>
+</resources>
