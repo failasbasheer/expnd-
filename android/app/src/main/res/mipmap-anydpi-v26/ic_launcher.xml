@@ -6,4 +6,12 @@
           android:drawable="@drawable/ic_launcher_foreground"
           android:inset="16%" />
   </foreground>
+  <!-- Material You themed icons (Android 13+). Same 16% inset as the foreground
+       so the mark lines up; the system recolors this silhouette to the user's
+       wallpaper palette. Without it EXPND is the one app that doesn't theme. -->
+  <monochrome>
+      <inset
+          android:drawable="@drawable/ic_launcher_monochrome"
+          android:inset="16%" />
+  </monochrome>
 </adaptive-icon>
