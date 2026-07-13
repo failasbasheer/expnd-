@@ -10,6 +10,10 @@
 	<string>Take photos of receipts to attach to your transactions.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save receipt photos you edit back to your photo library.</string>
+	<!-- EXPND never requests location. Required by Apple (ITMS-90683) because
+	     home_widget links CoreLocation; without it the binary is rejected. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EXPND does not collect or use your location. iOS requires this notice because a framework used by the home-screen widget links Apple's location services.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
