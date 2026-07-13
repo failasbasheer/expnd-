@@ -49,12 +49,6 @@ dependencies:
   # via an App Group, Android via the AppWidgetProvider).
   home_widget: ^0.7.0
 
-  # In-app update check for sideloaded APKs: read the installed build number,
-  # fetch a hosted version manifest, and open the download link in the browser.
-  package_info_plus: ^8.1.2
-  url_launcher: ^6.3.1
-  http: ^1.2.2
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

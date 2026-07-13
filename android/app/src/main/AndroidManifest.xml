@@ -1,9 +1,21 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Biometric unlock (local_auth). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
-    <!-- In-app update check: fetch the hosted version manifest over the network.
-         (Debug/profile builds get INTERNET automatically; release does not.) -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- No INTERNET permission: EXPND makes no network requests. Debug/profile
+         builds get it injected automatically so hot reload works; release does not. -->
+
+    <!-- androidx.work (pulled in transitively by home_widget) merges these four in.
+         WorkManager is never invoked: the widget is refreshed synchronously via
+         HomeWidget.updateWidget from the app process, and no interactivity/background
+         callback is ever registered. Strip them so the Play listing's permission list
+         matches what the app actually does. If a background widget callback is ever
+         added, these must come back. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
+
     <application
         android:label="EXPND"
         android:name="${applicationName}"
