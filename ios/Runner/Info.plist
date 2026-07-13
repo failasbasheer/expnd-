@@ -8,12 +8,8 @@
 	<string>Attach receipt photos to your transactions.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos of receipts to attach to your transactions.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Record audio only if you capture video of a receipt.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save receipt photos you edit back to your photo library.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>EXPND does not track your location; this is only used to tag where a receipt photo was taken, if you choose to.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
