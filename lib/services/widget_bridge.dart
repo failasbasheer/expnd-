@@ -92,15 +92,18 @@ class WidgetBridge {
         HomeWidget.saveWidgetData('has_data', store.accounts.isNotEmpty),
         HomeWidget.saveWidgetData('currency', code),
         HomeWidget.saveWidgetData('symbol', currencySymbol(code)),
-        HomeWidget.saveWidgetData('net_worth', formatCurrency(netWorth, code)),
+        HomeWidget.saveWidgetData('net_worth', formatCurrency(netWorth, code, maskable: false)),
         HomeWidget.saveWidgetData(
             'month_label', _monthName(now.month).toUpperCase()),
         HomeWidget.saveWidgetData(
-            'month_spent', formatCurrency(monthSpent, code)),
+            'month_spent', formatCurrency(monthSpent, code, maskable: false)),
         HomeWidget.saveWidgetData(
             'budget_ratio', ratio < 0 ? -1 : (ratio * 100).round()),
-        HomeWidget.saveWidgetData('budget_text',
-            budget > 0 ? 'of ${formatCurrency(budget, code)}' : ''),
+        HomeWidget.saveWidgetData(
+            'budget_text',
+            budget > 0
+                ? 'of ${formatCurrency(budget, code, maskable: false)}'
+                : ''),
         HomeWidget.saveWidgetData('tx_count', recent.length),
         for (var i = 0; i < recent.length; i++) ...[
           HomeWidget.saveWidgetData('tx${i}_note', _label(recent[i], store)),
@@ -134,7 +137,7 @@ class WidgetBridge {
   /// Signed, symbol-prefixed amount: `+₹1,200.00` / `-$4.50`. Transfers are
   /// balance-neutral overall, so they read without a sign.
   static String _signedAmount(Transaction t, String code) {
-    final formatted = formatCurrency(t.amount, code);
+    final formatted = formatCurrency(t.amount, code, maskable: false);
     switch (t.type) {
       case TransactionType.income:
         return '+$formatted';

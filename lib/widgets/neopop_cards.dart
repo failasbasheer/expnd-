@@ -14,9 +14,8 @@ class CardGuilloche extends StatelessWidget {
   const CardGuilloche({super.key, this.color = Colors.white});
 
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-        child: CustomPaint(painter: _GuillochePainter(color)),
-      );
+  Widget build(BuildContext context) =>
+      IgnorePointer(child: CustomPaint(painter: _GuillochePainter(color)));
 }
 
 class _GuillochePainter extends CustomPainter {
@@ -85,10 +84,12 @@ class _ChipPainter extends CustomPainter {
     canvas.drawLine(Offset(0, h * 0.66), Offset(w, h * 0.66), p);
     canvas.drawLine(Offset(w * 0.5, 0), Offset(w * 0.5, h), p);
     canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(w * 0.28, h * 0.28, w * 0.44, h * 0.44),
-            const Radius.circular(2)),
-        p);
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.28, h * 0.28, w * 0.44, h * 0.44),
+        const Radius.circular(2),
+      ),
+      p,
+    );
   }
 
   @override
@@ -110,6 +111,10 @@ class NeoPopBillCard extends StatelessWidget {
   final VoidCallback onCta;
   final VoidCallback? onOptions;
 
+  /// 0..1 fill for an optional progress bar under the amount. Null hides it.
+  /// Gives goal cards an at-a-glance sense of "how close" beyond the % label.
+  final double? progress;
+
   const NeoPopBillCard({
     super.key,
     required this.color,
@@ -122,6 +127,7 @@ class NeoPopBillCard extends StatelessWidget {
     required this.ctaLabel,
     required this.onCta,
     this.onOptions,
+    this.progress,
   });
 
   @override
@@ -150,21 +156,27 @@ class NeoPopBillCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.2,
-                                    color: Colors.white)),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.2,
+                                color: Colors.white,
+                              ),
+                            ),
                             const SizedBox(height: 6),
-                            Text(subtitle.toUpperCase(),
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 2,
-                                    color: Colors.white.withValues(alpha: 0.8))),
+                            Text(
+                              subtitle.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 2,
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -173,30 +185,58 @@ class NeoPopBillCard extends StatelessWidget {
                         height: 44,
                         alignment: Alignment.center,
                         decoration: const BoxDecoration(
-                            color: Colors.white, shape: BoxShape.circle),
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
                         child: Icon(icon, size: 22, color: color),
                       ),
                     ],
                   ),
                   const SizedBox(height: 28),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     color: tagColor,
-                    child: Text(tagText.toUpperCase(),
-                        style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2,
-                            color: Colors.white)),
+                    child: Text(
+                      tagText.toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  Text(amountText,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                          color: Colors.white.withValues(alpha: 0.95))),
+                  Text(
+                    amountText,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                      color: Colors.white.withValues(alpha: 0.95),
+                    ),
+                  ),
+                  if (progress != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: Stack(
+                        children: [
+                          Container(
+                            height: 6,
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                          FractionallySizedBox(
+                            widthFactor: progress!.clamp(0.0, 1.0),
+                            child: Container(height: 6, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -210,15 +250,21 @@ class NeoPopBillCard extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(ctaLabel,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.4,
-                                      color: Color(0xFF121212))),
+                              Text(
+                                ctaLabel,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.4,
+                                  color: Color(0xFF121212),
+                                ),
+                              ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.arrow_forward,
-                                  size: 15, color: Color(0xFF121212)),
+                              const Icon(
+                                Icons.arrow_forward,
+                                size: 15,
+                                color: Color(0xFF121212),
+                              ),
                             ],
                           ),
                         ),
@@ -231,19 +277,22 @@ class NeoPopBillCard extends StatelessWidget {
                             width: 44,
                             alignment: Alignment.center,
                             decoration: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    width: 0.5)
-                                .toBoxDecoration(),
+                              color: Colors.white.withValues(alpha: 0.6),
+                              width: 0.5,
+                            ).toBoxDecoration(),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: List.generate(
-                                  3,
-                                  (_) => Container(
-                                      width: 4,
-                                      height: 4,
-                                      margin:
-                                          const EdgeInsets.symmetric(vertical: 2),
-                                      color: Colors.white)),
+                                3,
+                                (_) => Container(
+                                  width: 4,
+                                  height: 4,
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 2,
+                                  ),
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -291,12 +340,15 @@ class NeoPopScoreGauge extends StatelessWidget {
       child: CustomPaint(
         painter: _GaugePainter(progress.clamp(0, 1), arcColor, trackColor),
         child: Center(
-          child: Text(centerText,
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: centerTextColor ?? Colors.white,
-                  letterSpacing: 0.2)),
+          child: Text(
+            centerText,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: centerTextColor ?? Colors.white,
+              letterSpacing: 0.2,
+            ),
+          ),
         ),
       ),
     );
@@ -360,30 +412,49 @@ class NeoPopStatCard extends StatelessWidget {
               Column(
                 children: [
                   NeoPopScoreGauge(
-                      progress: progress,
-                      centerText: gaugeText,
-                      arcColor: statusColor,
-                      trackColor: line,
-                      centerTextColor: popWhite),
+                    progress: progress,
+                    centerText: gaugeText,
+                    arcColor: statusColor,
+                    trackColor: line,
+                    centerTextColor: popWhite,
+                  ),
                   if (minLabel != null || maxLabel != null) ...[
                     const SizedBox(height: 12),
+                    // Wider than the 90pt gauge so the max label (e.g. "$3,000")
+                    // renders in full at boosted text sizes instead of "$3,00…".
                     SizedBox(
-                      width: 90,
+                      width: 132,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(minLabel ?? '',
+                          Flexible(
+                            child: Text(
+                              minLabel ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1,
-                                  color: oc.dimmed)),
-                          Text(maxLabel ?? '',
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1,
+                                color: oc.dimmed,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              maxLabel ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
                               style: TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1,
-                                  color: oc.dimmed)),
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1,
+                                color: oc.dimmed,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -395,44 +466,58 @@ class NeoPopStatCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(statusLabel.toUpperCase(),
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2,
-                            color: statusColor)),
+                    Text(
+                      statusLabel.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                        color: statusColor,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    Text(title,
-                        style: TextStyle(
-                            fontSize: 14,
-                            height: 1.2,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.4,
-                            color: popWhite)),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.4,
+                        color: popWhite,
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    Text(subtitle,
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.4,
-                            color: oc.muted)),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.4,
+                        color: oc.muted,
+                      ),
+                    ),
                     if (ctaLabel != null) ...[
                       const SizedBox(height: 20),
                       GestureDetector(
                         onTap: onCta,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: ExpndColors.ink,
                             border: Border.all(color: Colors.white, width: 1),
                           ),
-                          child: Text(ctaLabel!,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.2,
-                                  color: Colors.white)),
+                          child: Text(
+                            ctaLabel!,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -455,19 +540,32 @@ class NeoPopStatCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                        color: statusColor, shape: BoxShape.circle),
-                    child: const Icon(Icons.autorenew_rounded,
-                        size: 11, color: Colors.black)),
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.autorenew_rounded,
+                    size: 11,
+                    color: Colors.black,
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Text(footerText!.toUpperCase(),
+                Flexible(
+                  child: Text(
+                    footerText!.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
-                        color: popWhite)),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                      color: popWhite,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

@@ -95,6 +95,43 @@ class _TransactionDetailSheet extends StatelessWidget {
                 if (t.note.isNotEmpty) _detailRow(oc, 'NOTE', t.note),
                 if (t.isRecurring)
                   _detailRow(oc, 'REPEATS', t.recurrenceRule.raw),
+                if (t.tags.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('TAGS',
+                      style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          color: oc.muted)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final tag in t.tags)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: oc.surface,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: oc.border, width: 1),
+                          ),
+                          child: Text('#$tag',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: oc.text)),
+                        ),
+                    ],
+                  ),
+                ],
+                // A split row is one line of a bigger purchase; showing the
+                // whole receipt keeps the small number from looking wrong.
+                if (t.splitGroupId != null) ...[
+                  const SizedBox(height: 8),
+                  _splitCard(context, oc, store, t),
+                ],
                 if (t.photoPath != null && File(t.photoPath!).existsSync()) ...[
                   const SizedBox(height: 8),
                   Text('RECEIPT',
@@ -135,6 +172,12 @@ class _TransactionDetailSheet extends StatelessWidget {
             Haptics.light();
             Navigator.of(context).pop();
             await showAddTransaction(context, editing: t);
+          }),
+          const SizedBox(width: 8),
+          _iconButton(oc, 'doc.on.doc', oc.accent, () async {
+            Haptics.light();
+            Navigator.of(context).pop();
+            await showAddTransaction(context, duplicating: t);
           }),
           const SizedBox(width: 8),
           _iconButton(oc, 'trash', ExpndColors.red,
@@ -222,6 +265,89 @@ class _TransactionDetailSheet extends StatelessWidget {
     );
   }
 
+  /// The other lines of a split purchase, with the receipt total — so a
+  /// $12 "Household" row is visibly part of a $64 grocery run.
+  Widget _splitCard(
+      BuildContext context, ExpndColors oc, AppStore store, Transaction t) {
+    final rows = store.splitRows(t.splitGroupId!);
+    if (rows.length < 2) return const SizedBox.shrink();
+    final code = context.read<SettingsStore>().currencyCode;
+    final total = rows.fold(0.0, (s, e) => s + e.amount);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('PART OF A SPLIT',
+            style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+                color: oc.muted)),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: oc.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: oc.border, width: 1),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Column(
+            children: [
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(
+                    children: [
+                      Icon(sfIcon(row.category.icon),
+                          size: 12, color: row.category.color),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                            row.note.isEmpty ? row.category.raw : row.note,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: row.id == t.id
+                                    ? FontWeight.w900
+                                    : FontWeight.w500,
+                                color: row.id == t.id ? oc.text : oc.muted)),
+                      ),
+                      Text(formatCurrency(row.amount, code),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: row.id == t.id
+                                  ? FontWeight.w900
+                                  : FontWeight.w600,
+                              color: row.id == t.id ? oc.text : oc.muted)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Container(height: 1, color: oc.border),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text('RECEIPT TOTAL',
+                      style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: oc.muted)),
+                  const Spacer(),
+                  Text(formatCurrency(total, code),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: oc.text)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _detailRow(ExpndColors oc, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -253,6 +379,11 @@ class _TransactionDetailSheet extends StatelessWidget {
   void _confirmDelete(BuildContext context, AppStore store, Transaction t) {
     Haptics.light();
     final oc = context.oc;
+    // Half a receipt is never what someone means, so a split goes as a unit —
+    // and the prompt says so rather than surprising them after the fact.
+    final splitRows =
+        t.splitGroupId == null ? 0 : store.splitRows(t.splitGroupId!).length;
+    final isSplit = splitRows > 1;
     showModalBottomSheet(
       context: context,
       backgroundColor: oc.surface,
@@ -262,13 +393,20 @@ class _TransactionDetailSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Delete this transaction?',
+              Text(isSplit
+                      ? 'Delete this whole split?'
+                      : 'Delete this transaction?',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                       color: oc.text)),
               const SizedBox(height: 8),
-              Text('This cannot be undone.',
+              Text(
+                  isSplit
+                      ? 'All $splitRows lines of this purchase are removed. '
+                          'This cannot be undone.'
+                      : 'This cannot be undone.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: oc.muted)),
               const SizedBox(height: 20),
@@ -276,7 +414,11 @@ class _TransactionDetailSheet extends StatelessWidget {
                 width: double.infinity,
                 child: TextButton(
                   onPressed: () {
-                    store.deleteTransaction(t);
+                    if (isSplit) {
+                      store.deleteSplit(t.splitGroupId!);
+                    } else {
+                      store.deleteTransaction(t);
+                    }
                     Haptics.warning();
                     Navigator.of(context).pop(); // confirm sheet
                     Navigator.of(context).pop(); // detail sheet

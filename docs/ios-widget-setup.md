@@ -1,78 +1,73 @@
-# EXPND iOS home-screen widget — Xcode finalize steps
+# EXPND iOS home-screen widget — how it's wired
 
-All the code is written. These steps register the widget as an Xcode **target**
-and attach the App Group capability — they need Xcode's GUI and your Apple
-signing account, so they can't be scripted. ~5 minutes.
+The widget is **fully set up and committed** — there are no manual Xcode steps
+left. This file documents how the pieces connect, so the next person to touch it
+(or to debug a widget that won't populate) doesn't have to reverse-engineer the
+project file.
 
-Open the project first:
+## The moving parts
+
+| Piece | Where |
+| --- | --- |
+| Xcode target | `ExpndWidgetExtension` (app-extension), embedded in Runner via the *Embed Foundation Extensions* phase and a target dependency |
+| SwiftUI widget | `ios/ExpndWidget/ExpndWidget.swift`, `ExpndWidgetBundle.swift` |
+| Extension plist | `ios/ExpndWidget/Info.plist` — the `widgetkit-extension` `NSExtension` entry |
+| App Group | `group.com.expnd.app`, declared in `ios/Runner/Runner.entitlements` **and** `ios/ExpndWidgetExtension.entitlements` |
+| Dart side | `lib/services/widget_bridge.dart` — pushes a flat snapshot on every store change |
+| Deep link | `expnd://add` (`CFBundleURLTypes` in `Runner/Info.plist`) opens the add-transaction screen |
+
+The group id is defined once in code at `WidgetBridge.appGroupId`. If it ever
+changes, change it in all four places: that constant, the two `.entitlements`
+files named in the table above, and the `appGroupId` in `ExpndWidget.swift`.
+
+> ⚠️ There is a **third**, unreferenced copy at
+> `ios/ExpndWidget/ExpndWidget.entitlements`. Nothing signs against it — the
+> widget target's `CODE_SIGN_ENTITLEMENTS` points at `ExpndWidgetExtension.
+> entitlements` in `ios/`. It's byte-identical today, so it's harmless, but it
+> sits in the obvious place and editing it instead of the real one changes
+> nothing while looking like it should. Edit the file in `ios/`, not this one.
+
+## Two build settings that must stay as they are
+
+Both live on the three `ExpndWidgetExtension` build configurations and both have
+bitten this project before:
+
+- **`MARKETING_VERSION = $(FLUTTER_BUILD_NAME)`** and
+  **`CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)`.** App Store validation
+  rejects an extension whose version doesn't match its host app
+  (`ITMS-90473` / `ITMS-90474`). Hardcoding them means every `pubspec.yaml`
+  version bump silently breaks the upload, so they read Flutter's values
+  instead — which is why these configs have `Flutter/Generated.xcconfig` as
+  their base configuration. Don't remove that base configuration.
+- **`IPHONEOS_DEPLOYMENT_TARGET = 17.0`.** `containerBackground` requires
+  iOS 17. Xcode defaults a new extension target to the current SDK version,
+  which would hide the widget from everyone not on the newest iOS.
+
+Verify both after any Xcode-driven change to the project file:
 
 ```bash
-open ios/Runner.xcworkspace
+flutter build ios --release --no-codesign
+AX=build/ios/iphoneos/Runner.app/PlugIns/ExpndWidgetExtension.appex
+/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' $AX/Info.plist            # must equal the app's
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' $AX/Info.plist # must equal the app's
+/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' $AX/Info.plist           # 17.0
 ```
 
-## 1. Add the Widget Extension target
-
-1. **File → New → Target… → Widget Extension** → **Next**.
-2. Product Name: **ExpndWidget**. Team: your team. **Uncheck** "Include Live
-   Activity" and "Include Configuration App Intent". **Finish**.
-3. When asked to activate the "ExpndWidget" scheme, click **Cancel** (keep the
-   Runner scheme).
-
-Xcode creates an `ExpndWidget` group with a template `ExpndWidget.swift`,
-`Info.plist`, and an entitlements file.
-
-## 2. Swap in the real files
-
-The template files it generated are placeholders. Replace them with the ones
-already on disk in `ios/ExpndWidget/`:
-
-- Delete the template `ExpndWidget.swift` (Move to Trash) and drag in the
-  existing `ios/ExpndWidget/ExpndWidget.swift` — check **ExpndWidget** as the
-  target membership.
-- In the target's **Build Settings**, set **Info.plist File** to
-  `ExpndWidget/Info.plist` (or replace the generated plist's contents with the
-  one here — it just needs the `widgetkit-extension` NSExtension entry).
-- Set the target's **iOS Deployment Target** to **17.0** or higher
-  (`containerBackground` requires iOS 17).
-
-## 3. Add the App Group to BOTH targets
-
-The Flutter app writes the snapshot into a shared App Group; the widget reads
-it. Both sides must declare the same group.
-
-For **Runner** and again for **ExpndWidget**:
-
-1. Select the target → **Signing & Capabilities** → **+ Capability** →
-   **App Groups**.
-2. Add the group **`group.com.expnd.app`** (exact string).
-
-Entitlement files with this group already exist at
-`ios/Runner/Runner.entitlements` and `ios/ExpndWidget/ExpndWidget.entitlements`;
-adding the capability in Xcode wires them to signing. If Xcode created its own
-entitlements files, either point **Code Signing Entitlements** (Build Settings)
-at these, or just confirm the group id matches.
-
-> The group id is defined once in code at `WidgetBridge.appGroupId`
-> (`lib/services/widget_bridge.dart`). If you ever change it, change it in all
-> three places: that constant, both `.entitlements`, and the `appGroupId` in
-> `ExpndWidget.swift`.
-
-## 4. Build & run
+## Trying it
 
 ```bash
 flutter run   # on a device or the iOS simulator
 ```
 
-Then long-press the home screen → **+** → search **EXPND** → add the widget.
-It populates as soon as the app has run once (the app pushes a snapshot on
-launch and on every change). The **ADD** button / tapping the small widget opens
-the app straight into the add-transaction screen via the `expnd://add` deep link
-(already added to `Runner/Info.plist`).
+Long-press the home screen → **+** → search **EXPND**. It populates as soon as
+the app has run once (the app pushes a snapshot on launch and on every change).
+The **ADD** button / tapping the small widget opens the app straight into the
+add-transaction screen.
 
 ## Notes
 
-- The `@main` "top-level code" warning you may see on `ExpndWidget.swift` before
-  step 1 is a false positive from analyzing the file outside a target — it goes
-  away once the file is compiled as part of the ExpndWidget extension.
-- No changes to the Flutter/Dart side are needed; it's platform-agnostic and
-  already live (the Android widget uses the same snapshot).
+- No Dart-side changes are needed to add widget sizes or fields beyond the
+  snapshot keys — the bridge is platform-agnostic and the Android widget reads
+  the same snapshot.
+- An `@main` "top-level code" warning on `ExpndWidget.swift` when it's analyzed
+  outside its target is a false positive.

@@ -18,6 +18,8 @@ class AppStore extends ChangeNotifier {
   static const _kBudgets = 'categoryBudgets';
   static const _kGoals = 'savingsGoals';
   static const _kEmis = 'emis';
+  static const _kDebts = 'debts';
+  static const _kAccountOrder = 'accountOrder';
 
   static Future<AppStore> create() async {
     await Hive.initFlutter();
@@ -31,6 +33,12 @@ class AppStore extends ChangeNotifier {
   final List<CategoryBudget> _budgets = [];
   final List<SavingsGoal> _goals = [];
   final List<Emi> _emis = [];
+  final List<Debt> _debts = [];
+
+  /// User-defined account order (account ids). Empty means "no preference" —
+  /// fall back to creation order. Ids not listed here sort after listed ones,
+  /// so adding an account never disturbs the arrangement.
+  List<String> _accountOrder = [];
 
   // ── Public reads (mirror @Query sort orders) ──────────────────────────────
 
@@ -50,8 +58,27 @@ class AppStore extends ChangeNotifier {
 
   List<Account> get accounts {
     final list = List<Account>.from(_accounts);
-    list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (_accountOrder.isEmpty) {
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return list;
+    }
+    int rank(Account a) {
+      final i = _accountOrder.indexOf(a.id);
+      return i == -1 ? 1 << 30 : i;
+    }
+
+    list.sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.createdAt.compareTo(b.createdAt);
+    });
     return list;
+  }
+
+  /// Sets the user's account arrangement (see [_accountOrder]). Callers pass
+  /// the full list of ids in the new order.
+  void reorderAccounts(List<String> orderedIds) {
+    _accountOrder = List<String>.from(orderedIds);
+    _persist();
   }
 
   List<CustomCategory> get customCategories =>
@@ -62,6 +89,16 @@ class AppStore extends ChangeNotifier {
   List<SavingsGoal> get goals => List<SavingsGoal>.from(_goals);
 
   List<Emi> get emis => List<Emi>.from(_emis);
+
+  /// Newest first, unsettled before settled — the order the screen wants.
+  List<Debt> get debts {
+    final list = List<Debt>.from(_debts);
+    list.sort((a, b) {
+      if (a.isSettled != b.isSettled) return a.isSettled ? 1 : -1;
+      return b.date.compareTo(a.date);
+    });
+    return list;
+  }
 
   // ── Relationship resolution ───────────────────────────────────────────────
 
@@ -138,8 +175,52 @@ class AppStore extends ChangeNotifier {
 
   void updateTransaction() => _persist(); // caller mutated in place
 
+  /// Posts a recurring series' next occurrence early, then advances the
+  /// schedule one step so it stops being projected on the Upcoming screen.
+  /// Dated now — the user is recording it as done today, ahead of when
+  /// [generateRecurring] would have auto-posted it. The posted row is an
+  /// ordinary (non-recurring) transaction, exactly like an auto-posted one.
+  Transaction postRecurringNow(Transaction source) {
+    final posted = Transaction(
+      note: source.note,
+      amount: source.amount,
+      category: source.category,
+      type: source.type,
+      date: DateTime.now(),
+      isRecurring: false,
+    );
+    posted.accountId = source.accountId;
+    posted.toAccountId = source.toAccountId;
+    posted.customCategoryId = source.customCategoryId;
+    _transactions.add(posted);
+    final due = source.nextDueDate;
+    if (due != null) {
+      source.nextDueDate = source.recurrenceRule.nextDate(due);
+    }
+    _persist();
+    return posted;
+  }
+
+  /// Skips a recurring series' next occurrence: advances the schedule one step
+  /// without posting anything, so a bill you won't pay this cycle drops off
+  /// Upcoming without leaving a phantom transaction behind.
+  void skipRecurringOccurrence(Transaction source) {
+    final due = source.nextDueDate;
+    if (due == null) return;
+    source.nextDueDate = source.recurrenceRule.nextDate(due);
+    _persist();
+  }
+
   void deleteTransaction(Transaction t) {
     _transactions.removeWhere((e) => e.id == t.id);
+    _persist();
+  }
+
+  /// Removes many transactions in one shot (History's multi-select delete), so
+  /// the ledger persists and notifies once instead of once per row.
+  void deleteTransactions(Set<String> ids) {
+    if (ids.isEmpty) return;
+    _transactions.removeWhere((e) => ids.contains(e.id));
     _persist();
   }
 
@@ -155,6 +236,7 @@ class AppStore extends ChangeNotifier {
       if (t.toAccountId == a.id) t.toAccountId = null;
     }
     _accounts.removeWhere((e) => e.id == a.id);
+    _accountOrder.remove(a.id);
     // Cascade: an EMI has no meaning without its account.
     _emis.removeWhere((e) => e.accountId == a.id);
     _persist();
@@ -168,14 +250,63 @@ class AppStore extends ChangeNotifier {
   void updateEmi() => _persist(); // caller mutated in place
 
   void deleteEmi(Emi e) {
+    // Untag the installments but keep them: the money really did move.
+    for (final t in _transactions) {
+      if (t.emiId == e.id) t.emiId = null;
+    }
     _emis.removeWhere((x) => x.id == e.id);
     _persist();
+  }
+
+  // ── EMI installments ──────────────────────────────────────────────────────
+  //
+  // An EMI's schedule is a *plan* derived from its start date and tenure; a
+  // payment is a *fact*. Recording one writes an ordinary expense against the
+  // account the money actually left, tagged with the EMI id — the same shape
+  // debt repayments use. The schedule getters stay time-based, so projections
+  // and outstanding principal are unchanged by whether you logged the payment.
+
+  /// Installments recorded against [e], newest first.
+  List<Transaction> installmentsOn(Emi e) {
+    final list = _transactions.where((t) => t.emiId == e.id).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
+  /// Total actually paid toward [e] so far, from recorded installments.
+  double paidOn(Emi e) =>
+      installmentsOn(e).fold(0.0, (s, t) => s + t.amount);
+
+  /// True once an installment has been recorded in [month] — used to stop the
+  /// same one being logged twice from the Upcoming list.
+  bool isInstallmentPaid(Emi e, DateTime month) => installmentsOn(e).any((t) =>
+      t.date.year == month.year && t.date.month == month.month);
+
+  /// Records one installment of [e] as really paid out of [accountId].
+  ///
+  /// [amount] defaults to the scheduled installment, but is settable because
+  /// a lender's rounding rarely matches ours to the paisa.
+  Transaction payEmiInstallment(Emi e, {String? accountId, double? amount, DateTime? date}) {
+    final t = Transaction(
+      note: e.name.trim().isEmpty ? 'EMI installment' : e.name.trim(),
+      amount: amount ?? e.monthlyAmount,
+      category: TransactionCategory.other,
+      type: TransactionType.expense,
+      date: date ?? DateTime.now(),
+      accountId: accountId,
+      emiId: e.id,
+    );
+    _transactions.add(t);
+    _persist();
+    return t;
   }
 
   void addCustomCategory(CustomCategory c) {
     _customCategories.add(c);
     _persist();
   }
+
+  void updateCustomCategory() => _persist(); // caller mutated in place
 
   void deleteCustomCategory(CustomCategory c) {
     for (final t in _transactions) {
@@ -203,25 +334,263 @@ class AppStore extends ChangeNotifier {
   /// the profile category-budgets section and the add-transaction warning:
   /// expenses only, built-in categories only, same calendar month.
   ({double limit, double spent, double over})? categoryBudgetOverage(
-      Transaction t) {
+      Transaction t,
+      {bool rollover = false}) {
     if (t.type != TransactionType.expense) return null;
     if (t.customCategoryId != null) return null;
     final budget =
         _budgets.where((b) => b.categoryRaw == t.category.raw).firstOrNull;
     if (budget == null || budget.limit <= 0) return null;
 
-    double spent = 0;
-    for (final e in _transactions) {
-      if (e.type == TransactionType.expense &&
-          e.customCategoryId == null &&
-          e.category == t.category &&
-          e.date.year == t.date.year &&
-          e.date.month == t.date.month) {
-        spent += e.amount;
+    final limit = rollover
+        ? rolledOverLimit(budget.limit, t.date, category: t.category)
+        : budget.limit;
+    final spent = spentInMonth(t.date, category: t.category);
+    if (spent <= limit) return null;
+    return (limit: limit, spent: spent, over: spent - limit);
+  }
+
+  // ── Debts (lent / borrowed) ───────────────────────────────────────────────
+  //
+  // Lending money is a real movement — the cash left an account — so that side
+  // is an ordinary transaction and balances stay honest. A Debt only records
+  // who owes what, which no account balance can express. How much has been
+  // paid back is derived from the repayment transactions, never stored.
+
+  void addDebt(Debt d) {
+    _debts.add(d);
+    _persist();
+  }
+
+  void updateDebt() => _persist(); // caller mutated in place
+
+  void deleteDebt(Debt d) {
+    // Untag the repayments but keep them: the money really did move.
+    for (final t in _transactions) {
+      if (t.debtId == d.id) t.debtId = null;
+    }
+    _debts.removeWhere((e) => e.id == d.id);
+    _persist();
+  }
+
+  Debt? debtFor(String? id) =>
+      id == null ? null : _debts.where((d) => d.id == id).firstOrNull;
+
+  /// Repayments recorded against this debt, newest first.
+  List<Transaction> repaymentsOn(Debt d) {
+    final list = _transactions.where((t) => t.debtId == d.id).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
+  double repaidOn(Debt d) =>
+      repaymentsOn(d).fold(0.0, (s, t) => s + t.amount);
+
+  /// What's still owed. Settling by hand closes it out regardless of what the
+  /// repayments add up to — people forgive the last ten rupees.
+  double outstandingOn(Debt d) {
+    if (d.isSettled) return 0;
+    final left = d.amount - repaidOn(d);
+    return left < 0 ? 0 : left;
+  }
+
+  /// Records money coming back (they repay me) or going out (I repay them) as
+  /// a real transaction against [account], tagged to the debt.
+  Transaction repayDebt(Debt d, double amount, String? accountId) {
+    final t = Transaction(
+      note: d.theyOweMe
+          ? '${d.person} repaid'
+          : 'Repaid ${d.person}',
+      amount: amount,
+      category: TransactionCategory.other,
+      // They pay me back: money comes in. I pay them back: money goes out.
+      type: d.theyOweMe ? TransactionType.income : TransactionType.expense,
+      accountId: accountId,
+      debtId: d.id,
+    );
+    _transactions.add(t);
+    // Fully repaid closes it without the user having to also tap "settled".
+    if (d.amount - repaidOn(d) <= 0.005) d.settledDate = DateTime.now();
+    _persist();
+    return t;
+  }
+
+  /// Total still owed to the user across every open debt.
+  double get owedToMe => _debts
+      .where((d) => d.theyOweMe && !d.isSettled)
+      .fold(0.0, (s, d) => s + outstandingOn(d));
+
+  /// Total the user still owes others.
+  double get owedByMe => _debts
+      .where((d) => !d.theyOweMe && !d.isSettled)
+      .fold(0.0, (s, d) => s + outstandingOn(d));
+
+  // ── Tags ──────────────────────────────────────────────────────────────────
+
+  /// Every tag in use, most-used first — the order a picker should offer them.
+  List<String> get allTags {
+    final counts = <String, int>{};
+    for (final t in _transactions) {
+      for (final tag in t.tags) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
       }
     }
-    if (spent <= budget.limit) return null;
-    return (limit: budget.limit, spent: spent, over: spent - budget.limit);
+    final list = counts.keys.toList()
+      ..sort((a, b) {
+        final byCount = counts[b]!.compareTo(counts[a]!);
+        return byCount != 0 ? byCount : a.compareTo(b);
+      });
+    return list;
+  }
+
+  List<Transaction> transactionsWithTag(String tag) {
+    final needle = tag.toLowerCase();
+    return transactions
+        .where((t) => t.tags.any((e) => e.toLowerCase() == needle))
+        .toList();
+  }
+
+  /// Net spend under a tag — what "how much did Japan actually cost me?"
+  /// resolves to. Expenses count up, refunds against the tag count back down.
+  double spentOnTag(String tag) {
+    var total = 0.0;
+    for (final t in transactionsWithTag(tag)) {
+      if (t.type == TransactionType.expense) {
+        total += t.amount;
+      } else if (t.type == TransactionType.income) {
+        total -= t.amount;
+      }
+    }
+    return total;
+  }
+
+  /// Renames a tag everywhere it appears, collapsing duplicates if the new
+  /// name already exists on a transaction.
+  void renameTag(String from, String to) {
+    final target = to.trim();
+    if (target.isEmpty) return;
+    final needle = from.toLowerCase();
+    for (final t in _transactions) {
+      if (!t.tags.any((e) => e.toLowerCase() == needle)) continue;
+      t.tags.removeWhere((e) => e.toLowerCase() == needle);
+      if (!t.tags.any((e) => e.toLowerCase() == target.toLowerCase())) {
+        t.tags.add(target);
+      }
+    }
+    _persist();
+  }
+
+  void deleteTag(String tag) {
+    final needle = tag.toLowerCase();
+    for (final t in _transactions) {
+      t.tags.removeWhere((e) => e.toLowerCase() == needle);
+    }
+    _persist();
+  }
+
+  // ── Splits ────────────────────────────────────────────────────────────────
+
+  /// The rows of a split purchase, oldest first so they read in entry order.
+  List<Transaction> splitRows(String groupId) {
+    final list =
+        _transactions.where((t) => t.splitGroupId == groupId).toList()
+          ..sort((a, b) => a.id.compareTo(b.id));
+    return list;
+  }
+
+  /// Records one purchase spread over several categories as several ordinary
+  /// transactions sharing a group id. They are deliberately *not* a special
+  /// kind of row: balances, budgets and analytics count them like any other
+  /// expense, which is exactly what a split should do.
+  List<Transaction> addSplit({
+    required List<({double amount, TransactionCategory category, String note})>
+        lines,
+    required TransactionType type,
+    required DateTime date,
+    String? accountId,
+    List<String> tags = const [],
+  }) {
+    final groupId = newId();
+    final made = <Transaction>[];
+    for (final line in lines) {
+      if (line.amount <= 0) continue;
+      final t = Transaction(
+        note: line.note,
+        amount: line.amount,
+        category: line.category,
+        type: type,
+        date: date,
+        accountId: accountId,
+        tags: List<String>.from(tags),
+        splitGroupId: groupId,
+      );
+      _transactions.add(t);
+      made.add(t);
+    }
+    _persist();
+    return made;
+  }
+
+  /// Deleting any row of a split removes the whole purchase — a half-deleted
+  /// receipt is never what someone means.
+  void deleteSplit(String groupId) {
+    _transactions.removeWhere((t) => t.splitGroupId == groupId);
+    _persist();
+  }
+
+  /// Manual entry lives or dies on friction, so typing a payee the user has
+  /// logged before should finish the rest of the form. Returns the most
+  /// recent transaction for each distinct note matching [query] (newest
+  /// first) — the caller copies category/account off them. Transfers are
+  /// skipped: their notes ("To Emergency Fund") aren't payees.
+  List<Transaction> payeeSuggestions(String query, {int limit = 4}) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final seen = <String>{};
+    final out = <Transaction>[];
+    for (final t in transactions) {
+      // getter is newest-first
+      if (t.type == TransactionType.transfer) continue;
+      final note = t.note.trim();
+      if (note.isEmpty) continue;
+      final key = note.toLowerCase();
+      if (!key.contains(q) || key == q) continue;
+      if (seen.add(key)) {
+        out.add(t);
+        if (out.length >= limit) break;
+      }
+    }
+    return out;
+  }
+
+  /// Total spent in [month] — across everything, or one built-in category.
+  /// Mirrors the scoping the budget screens already use: expenses only, and
+  /// custom-category spends only count toward the overall total.
+  double spentInMonth(DateTime month, {TransactionCategory? category}) {
+    double spent = 0;
+    for (final t in _transactions) {
+      if (t.type != TransactionType.expense) continue;
+      if (t.date.year != month.year || t.date.month != month.month) continue;
+      if (category != null &&
+          (t.customCategoryId != null || t.category != category)) {
+        continue;
+      }
+      spent += t.amount;
+    }
+    return spent;
+  }
+
+  /// What last month's budget leaves for [month] when rollover is on:
+  /// underspend adds to this month, overspend eats into it. Floored so a
+  /// blown month can't produce a negative budget (progress math divides by
+  /// the limit).
+  double rolledOverLimit(double baseLimit, DateTime month,
+      {TransactionCategory? category}) {
+    if (baseLimit <= 0) return baseLimit;
+    final prev = DateTime(month.year, month.month - 1);
+    final carried = baseLimit - spentInMonth(prev, category: category);
+    final effective = baseLimit + carried;
+    return effective < 0 ? 0 : effective;
   }
 
   void addGoal(SavingsGoal g) {
@@ -230,11 +599,106 @@ class AppStore extends ChangeNotifier {
   }
 
   void deleteGoal(SavingsGoal g) {
+    // Nothing to clean up: the goal only ever claimed part of an account's
+    // balance. Dropping it releases the claim and touches no money.
     _goals.removeWhere((e) => e.id == g.id);
     _persist();
   }
 
   void touchGoals() => _persist();
+
+  double progressForGoal(SavingsGoal g) => g.targetAmount > 0
+      ? (g.allocatedAmount / g.targetAmount).clamp(0.0, 1.0)
+      : 0.0;
+
+  /// Goals holding their money in [acc], in the order they were created.
+  List<SavingsGoal> goalsIn(Account acc) =>
+      _goals.where((g) => g.accountId == acc.id).toList();
+
+  double claimedIn(Account acc) {
+    var claimed = 0.0;
+    for (final g in _goals) {
+      if (g.accountId == acc.id) claimed += g.allocatedAmount;
+    }
+    return claimed;
+  }
+
+  /// Money in [acc] that no goal has spoken for. Goes negative only when the
+  /// balance has since dropped below what the goals claim — i.e. the user
+  /// spent money that was set aside.
+  double unallocatedIn(Account acc) => balanceFor(acc) - claimedIn(acc);
+
+  /// The most a goal could add to its claim right now.
+  double availableToAllocate(SavingsGoal g) {
+    final acc = accountFor(g.accountId);
+    if (acc == null) return 0;
+    final free = unallocatedIn(acc);
+    return free < 0 ? 0 : free;
+  }
+
+  /// Sets aside [amount] more of the holding account's balance for this goal,
+  /// capped at what the account actually has spare — a goal can never claim
+  /// money that isn't there. Returns the amount actually applied.
+  ///
+  /// This moves no money and writes no transaction: the balance was already
+  /// in the account, it just now has a name on it.
+  double allocateToGoal(SavingsGoal g, double amount) {
+    if (amount <= 0 || g.accountId == null) return 0;
+    final applied = amount.clamp(0.0, availableToAllocate(g));
+    if (applied <= 0) return 0;
+    g.allocatedAmount += applied;
+    _persist();
+    return applied;
+  }
+
+  /// Hands [amount] back to the account's unallocated pool (all of it when
+  /// [amount] is omitted) — used when a goal is spent or abandoned.
+  void releaseFromGoal(SavingsGoal g, [double? amount]) {
+    final give = amount ?? g.allocatedAmount;
+    g.allocatedAmount = (g.allocatedAmount - give).clamp(0.0, double.infinity);
+    _persist();
+  }
+
+  /// Accounts whose goals claim more than the account still holds. Happens
+  /// when set-aside money gets spent; the fix is to release a goal's claim.
+  List<Account> get overAllocatedAccounts =>
+      _accounts.where((a) => unallocatedIn(a) < -0.001).toList();
+
+  /// Swaps in a full dataset in one shot — the restore path of backup.dart.
+  /// Callers must pass fully-parsed collections; nothing here validates,
+  /// so a restore that can fail must fail before calling this.
+  void replaceAll({
+    required List<Transaction> transactions,
+    required List<Account> accounts,
+    required List<CustomCategory> customCategories,
+    required List<CategoryBudget> budgets,
+    required List<SavingsGoal> goals,
+    required List<Emi> emis,
+    List<Debt> debts = const [],
+  }) {
+    _transactions
+      ..clear()
+      ..addAll(transactions);
+    _accounts
+      ..clear()
+      ..addAll(accounts);
+    _customCategories
+      ..clear()
+      ..addAll(customCategories);
+    _budgets
+      ..clear()
+      ..addAll(budgets);
+    _goals
+      ..clear()
+      ..addAll(goals);
+    _emis
+      ..clear()
+      ..addAll(emis);
+    _debts
+      ..clear()
+      ..addAll(debts);
+    _persist();
+  }
 
   /// Deletes every entity (Profile "reset all data").
   void wipeAll() {
@@ -244,13 +708,30 @@ class AppStore extends ChangeNotifier {
     _budgets.clear();
     _goals.clear();
     _emis.clear();
+    _debts.clear();
+    _accountOrder = [];
     _persist();
   }
 
+  /// Transactions the most recent [generateRecurring] posted, awaiting a UI
+  /// that tells the user about them. Held here because generation runs during
+  /// boot, before any screen exists to receive the result.
+  List<Transaction> _recurringNotice = [];
+
+  /// Hands over (and clears) the transactions auto-posted on this launch, so
+  /// the shell can surface them once. Returns empty if there were none or if
+  /// they've already been shown.
+  List<Transaction> takeRecurringNotice() {
+    final n = _recurringNotice;
+    _recurringNotice = [];
+    return n;
+  }
+
   /// Generates due recurring transactions (mirrors AppRootView.generateRecurring).
-  void generateRecurring() {
+  /// Returns everything it posted, newest last.
+  List<Transaction> generateRecurring() {
     final now = DateTime.now();
-    var changed = false;
+    final generated = <Transaction>[];
     for (final t in List<Transaction>.from(_transactions)) {
       if (!t.isRecurring) continue;
       var due = t.nextDueDate;
@@ -270,12 +751,16 @@ class AppStore extends ChangeNotifier {
         posted.toAccountId = t.toAccountId;
         posted.customCategoryId = t.customCategoryId;
         _transactions.add(posted);
+        generated.add(posted);
         due = t.recurrenceRule.nextDate(due);
       }
       t.nextDueDate = due;
-      changed = true;
     }
-    if (changed) _persist();
+    if (generated.isNotEmpty) {
+      _recurringNotice = generated;
+      _persist();
+    }
+    return generated;
   }
 
   // ── Persistence ───────────────────────────────────────────────────────────
@@ -299,6 +784,13 @@ class AppStore extends ChangeNotifier {
     _emis
       ..clear()
       ..addAll(_decode(_kEmis).map(Emi.fromJson));
+    _debts
+      ..clear()
+      ..addAll(_decode(_kDebts).map(Debt.fromJson));
+    final rawOrder = _box.get(_kAccountOrder) as String?;
+    _accountOrder = rawOrder == null || rawOrder.isEmpty
+        ? []
+        : (jsonDecode(rawOrder) as List).cast<String>();
   }
 
   List<Map> _decode(String key) {
@@ -316,6 +808,8 @@ class AppStore extends ChangeNotifier {
     _box.put(_kBudgets, jsonEncode(_budgets.map((e) => e.toJson()).toList()));
     _box.put(_kGoals, jsonEncode(_goals.map((e) => e.toJson()).toList()));
     _box.put(_kEmis, jsonEncode(_emis.map((e) => e.toJson()).toList()));
+    _box.put(_kDebts, jsonEncode(_debts.map((e) => e.toJson()).toList()));
+    _box.put(_kAccountOrder, jsonEncode(_accountOrder));
     notifyListeners();
   }
 }

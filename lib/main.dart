@@ -5,8 +5,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'services/backup.dart';
+import 'services/reminders.dart';
 import 'services/widget_bridge.dart';
 import 'store/app_store.dart';
 import 'store/settings_store.dart';
@@ -16,6 +19,7 @@ import 'screens/home_shell.dart';
 import 'screens/lock_screen.dart';
 import 'screens/account_setup.dart';
 import 'screens/splash_screen.dart';
+import 'screens/whats_new.dart';
 
 /// Lets the home-widget deep-link handler push routes from outside the tree.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -52,6 +56,20 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
     store.generateRecurring();
     // Seed the home-screen widgets and keep them in sync with every change.
     await WidgetBridge.attach(store, settings);
+    // Re-arm every notification from the ledger + settings as they stand now.
+    // iOS drops pending notifications when an app is reinstalled and Android
+    // forgets them on some OEM restarts, so the whole schedule is rebuilt on
+    // each launch rather than assumed to still be in place — and rebuilding it
+    // is also what keeps the personalised text current. Never prompts:
+    // permission was already granted when the user turned an alert on. Any
+    // state alert newly true (over budget, goal reached) fires here too.
+    await Reminders.refreshAll(store, settings);
+    // Take a rolling snapshot if the last one has gone stale. Everything here
+    // was typed by hand and there is no server to re-fetch it from, so this
+    // runs unprompted rather than waiting to be remembered. Failures are
+    // swallowed inside — a backup must never stop the app from opening.
+    unawaited(maybeAutoBackup(
+        store, settings, await getApplicationDocumentsDirectory()));
     return _Boot(settings, store);
   }
 
@@ -218,15 +236,25 @@ class AppRoot extends StatefulWidget {
 class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   bool _unlocked = false;
   bool _shownSetup = false;
+  bool _shownWhatsNew = false;
   // A quick-add tap that arrived while the app was locked, replayed on unlock.
   bool _pendingQuickAdd = false;
   StreamSubscription<Uri?>? _widgetClicks;
+  // When the app last dropped to the background, so resume can decide whether
+  // the auto-lock grace window has elapsed. Null means "not backgrounded".
+  DateTime? _leftAt;
+  // An opaque cover shown while the app is away, so the OS app-switcher
+  // snapshot never leaks balances even when re-auth is inside its grace window.
+  bool _covering = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowSetup());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowSetup();
+      _maybeShowWhatsNew();
+    });
     // Home-screen widget quick-add: both the cold-start launch and taps while
     // the app is already running.
     HomeWidget.initiallyLaunchedFromHomeWidget().then(_onWidgetUri);
@@ -260,12 +288,38 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
     final settings = context.read<SettingsStore>();
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      if (settings.biometricLockEnabled && mounted && _unlocked) {
-        setState(() => _unlocked = false);
-      }
+    if (!settings.biometricLockEnabled) return;
+
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        // Only cover/track once the user is actually past the lock. If the
+        // LockScreen is already up it covers itself, and its Face ID prompt
+        // (which itself fires `inactive`) must not arm the grace timer.
+        if (_unlocked) {
+          if (!_covering) setState(() => _covering = true);
+          // `paused` is the only truly-backgrounded signal — Control Center
+          // and the notification shade stop at `inactive`, so they never start
+          // the re-lock countdown.
+          if (state == AppLifecycleState.paused) _leftAt = DateTime.now();
+        }
+      case AppLifecycleState.resumed:
+        final leftAt = _leftAt;
+        _leftAt = null;
+        // Immediately (grace 0) always expires; any window compares elapsed
+        // time. Never having reached `paused` (leftAt null) leaves us unlocked.
+        final expired = leftAt != null &&
+            DateTime.now().difference(leftAt).inSeconds >=
+                settings.autoLockGraceSeconds;
+        setState(() {
+          _covering = false;
+          if (_unlocked && expired) _unlocked = false;
+        });
+      case AppLifecycleState.detached:
+        break;
     }
   }
 
@@ -281,6 +335,25 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     }
   }
 
+  /// Shows the What's New tour once per version, but only to users who already
+  /// finished setup — that's exactly the people upgrading from a previous
+  /// version. Fresh installs get [kWhatsNewVersion] stamped as they complete
+  /// onboarding, so they never see an "update" tour for features they're
+  /// meeting for the first time.
+  void _maybeShowWhatsNew() {
+    final settings = context.read<SettingsStore>();
+    final locked = settings.biometricLockEnabled && !_unlocked;
+    if (locked || _shownWhatsNew) return;
+    if (!settings.hasCompletedAccountSetup) return;
+    if (settings.whatsNewSeenVersion >= kWhatsNewVersion) return;
+    _shownWhatsNew = true;
+    // Just behind the setup delay, so the home screen has settled first.
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      showWhatsNew(context);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsStore>();
@@ -293,9 +366,36 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
           LockScreen(onUnlock: () {
             setState(() => _unlocked = true);
             _maybeShowSetup();
+            _maybeShowWhatsNew();
             if (_pendingQuickAdd) _openQuickAdd();
-          }),
+          })
+        // Away but still within the grace window: no re-auth needed, just an
+        // opaque cover so nothing shows through the app-switcher snapshot.
+        else if (_covering)
+          const _PrivacyCover(),
       ],
+    );
+  }
+}
+
+/// Opaque, static screen laid over the app while it sits in the background but
+/// is still inside its auto-lock grace window (so no Face ID is owed yet). It
+/// keeps balances out of the OS app-switcher snapshot, reusing the launch mark
+/// so a quick hop away and back reads as the app, not a foreign screen.
+class _PrivacyCover extends StatelessWidget {
+  const _PrivacyCover();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: ExpndColors.ink,
+      child: const Center(
+        child: Image(
+          image: AssetImage('assets/brand/expnd_E.png'),
+          height: 172,
+          filterQuality: FilterQuality.high,
+        ),
+      ),
     );
   }
 }

@@ -10,6 +10,7 @@ import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/neopop.dart';
 import '../widgets/neopop_cards.dart';
+import 'whats_new.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Onboarding (first launch)
@@ -45,7 +46,11 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
   List<_AccountDraft> _drafts = [];
 
   void _complete() {
-    context.read<SettingsStore>().hasCompletedAccountSetup = true;
+    final settings = context.read<SettingsStore>();
+    settings.hasCompletedAccountSetup = true;
+    // A fresh install is meeting these features for the first time, so it has
+    // no "what's new" to catch up on — stamp the current version as seen.
+    settings.whatsNewSeenVersion = kWhatsNewVersion;
     Navigator.of(context).pop();
   }
 
@@ -1189,21 +1194,30 @@ class AccountCardContent extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Text(
-                            '${formatCurrency(creditUsed, currencyCode)} used',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: faceText,
+                          Flexible(
+                            child: Text(
+                              '${formatCurrency(creditUsed, currencyCode)} used',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: faceText,
+                              ),
                             ),
                           ),
-                          const Spacer(),
-                          Text(
-                            'Limit ${formatCurrency(creditLimit ?? 0, currencyCode)}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: faceText,
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Limit ${formatCurrency(creditLimit ?? 0, currencyCode)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: faceText,
+                              ),
                             ),
                           ),
                         ],
@@ -1212,16 +1226,20 @@ class AccountCardContent extends StatelessWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Text(
-                          maskedCardNumber(cardDigits),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 2,
-                            color: faceText,
+                        Flexible(
+                          child: Text(
+                            maskedCardNumber(cardDigits),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2,
+                              color: faceText,
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         NeoPopTag(
                           text: currencyCode,
                           bg: Colors.white.withValues(alpha: 0.16),
@@ -1303,7 +1321,9 @@ Widget _typeGrid(
     physics: const NeverScrollableScrollPhysics(),
     mainAxisSpacing: 10,
     crossAxisSpacing: 10,
-    childAspectRatio: 1.6,
+    // Slightly taller cells so a two-line type name ("Credit Card") plus icon
+    // clears the tile even at a bumped-up system text size.
+    childAspectRatio: 1.4,
     children: [
       for (final t in AccountType.values)
         Builder(
@@ -1335,12 +1355,12 @@ Widget _typeGrid(
                     children: [
                       Icon(
                         sfIcon(t.icon),
-                        size: 18,
+                        size: 16,
                         color: sel
                             ? ExpndColors.ink
                             : hexColor(t.defaultColorHex),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Text(

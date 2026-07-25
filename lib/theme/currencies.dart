@@ -103,10 +103,31 @@ int currencyDecimalDigits(String code) {
   }
 }
 
+/// Global privacy gate behind the eye button in the dashboard and wallet
+/// headers. When on, every user-facing money string renders as a mask instead
+/// of the figure. Mirrored from `SettingsStore.amountsHidden` so the pure
+/// formatters below can honour it without a [BuildContext] — screens rebuild on
+/// toggle because they already watch the store for `currencyCode`.
+class AmountPrivacy {
+  AmountPrivacy._();
+
+  static bool hidden = false;
+
+  /// Fixed glyph count regardless of the real value, so a masked figure gives
+  /// away nothing about its magnitude.
+  static const mask = '••••';
+}
+
 /// Formats [amount] like SwiftUI's `.currency(code:)` — symbol + grouped value,
 /// using the currency's correct number of decimal places.
-String formatCurrency(double amount, String code) {
+///
+/// Pass `maskable: false` for surfaces outside the app's own UI (the
+/// home-screen widget bridge) — those have no eye button of their own, so they
+/// always render the real figure.
+String formatCurrency(double amount, String code, {bool maskable = true}) {
   final symbol = currencySymbol(code);
+  // Keep the symbol: it costs nothing privacy-wise and holds the layout.
+  if (maskable && AmountPrivacy.hidden) return '$symbol${AmountPrivacy.mask}';
   final f = NumberFormat.currency(
     symbol: symbol,
     decimalDigits: currencyDecimalDigits(code),
@@ -116,7 +137,9 @@ String formatCurrency(double amount, String code) {
 
 /// A bare grouped number with two decimals and no currency symbol
 /// (e.g. `1,250.00`). Callers that render their own symbol use this.
-String formatAmount(double amount) => NumberFormat('#,##0.00').format(amount);
+String formatAmount(double amount) => AmountPrivacy.hidden
+    ? AmountPrivacy.mask
+    : NumberFormat('#,##0.00').format(amount);
 
 extension _FirstOrNull<E> on Iterable<E> {
   E? get firstOrNull => isEmpty ? null : first;

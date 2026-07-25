@@ -15,6 +15,12 @@ const Map<String, IconData> _map = {
   'plus': CupertinoIcons.plus,
   'exclamationmark.triangle.fill': CupertinoIcons.exclamationmark_triangle_fill,
 
+  // Controls
+  'arrow.up.arrow.down': CupertinoIcons.arrow_up_arrow_down,
+  'line.horizontal.3': CupertinoIcons.line_horizontal_3,
+  'textformat': CupertinoIcons.textformat,
+  'doc.on.doc': CupertinoIcons.doc_on_doc,
+
   // Categories
   'cart.fill': CupertinoIcons.cart_fill,
   'bag.fill': CupertinoIcons.bag_fill,
@@ -44,6 +50,9 @@ const Map<String, IconData> _map = {
   'calendar': CupertinoIcons.calendar,
   'calendar.badge.checkmark': Icons.event_available,
 
+  // Filtering
+  'line.3.horizontal.decrease': CupertinoIcons.line_horizontal_3_decrease,
+
   // Directional / status
   'arrow.up': CupertinoIcons.arrow_up,
   'arrow.down': CupertinoIcons.arrow_down,
@@ -63,6 +72,8 @@ const Map<String, IconData> _map = {
   'pencil.circle.fill': Icons.edit,
   'plus.circle': CupertinoIcons.plus_circle,
   'plus.circle.fill': CupertinoIcons.plus_circle_fill,
+  'eye': CupertinoIcons.eye,
+  'eye.slash': CupertinoIcons.eye_slash,
   'xmark': CupertinoIcons.xmark,
   'xmark.circle': CupertinoIcons.xmark_circle,
   'checkmark': CupertinoIcons.checkmark_alt,

@@ -387,36 +387,53 @@ class CategoryBudget {
   }
 }
 
+/// A savings target. The goal holds no money and moves none: it ring-fences
+/// part of the balance already sitting in [accountId], the way Monarch's fund
+/// allocations and YNAB's envelopes do. EXPND has no bank connection, so every
+/// transaction in it was typed by a human about something that really
+/// happened — a goal must never invent one, or the app's account balances
+/// would drift away from the real bank's.
+///
+/// [allocatedAmount] is therefore a claim on money that already exists, kept
+/// honest by `AppStore.unallocatedIn`: the claims against an account can never
+/// exceed what that account actually holds.
 class SavingsGoal {
   final String id;
   String name;
   double targetAmount;
-  double currentAmount;
+
+  /// How much of the holding account's balance is set aside for this goal.
+  double allocatedAmount;
+
   String iconName;
   String colorHex;
   DateTime createdDate;
+
+  /// Account the goal's money sits in — normally an [AccountType.savings] one.
+  /// Null means nothing is set aside yet: the goal is a target with no money
+  /// behind it, which is a legitimate state to be in.
+  String? accountId;
 
   SavingsGoal({
     String? id,
     required this.name,
     required this.targetAmount,
-    this.currentAmount = 0,
+    this.allocatedAmount = 0,
     this.iconName = 'star.fill',
     this.colorHex = 'F7C948',
+    this.accountId,
     DateTime? createdDate,
   })  : id = id ?? newId(),
         createdDate = createdDate ?? DateTime.now();
-
-  double get progress =>
-      targetAmount > 0 ? (currentAmount / targetAmount).clamp(0.0, 1.0) : 0.0;
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'targetAmount': targetAmount,
-        'currentAmount': currentAmount,
+        'allocatedAmount': allocatedAmount,
         'iconName': iconName,
         'colorHex': colorHex,
+        'accountId': accountId,
         'createdDate': createdDate.millisecondsSinceEpoch,
       };
 
@@ -424,9 +441,18 @@ class SavingsGoal {
         id: j['id'] as String,
         name: j['name'] as String,
         targetAmount: (j['targetAmount'] as num).toDouble(),
-        currentAmount: (j['currentAmount'] as num).toDouble(),
+        // 1.0.0 stored a hand-maintained 'currentAmount'; a build in between
+        // called it 'openingAmount'. Both meant "money set aside for this",
+        // which is what an allocation is — carry either over so nobody opens
+        // the app to a goal reset to zero.
+        allocatedAmount: ((j['allocatedAmount'] ??
+                    j['openingAmount'] ??
+                    j['currentAmount']) as num?)
+                ?.toDouble() ??
+            0,
         iconName: j['iconName'] as String? ?? 'star.fill',
         colorHex: j['colorHex'] as String? ?? 'F7C948',
+        accountId: j['accountId'] as String?,
         createdDate: DateTime.fromMillisecondsSinceEpoch(
             (j['createdDate'] as num).toInt()),
       );
@@ -447,6 +473,25 @@ class Transaction {
   String? accountId;
   String? toAccountId;
 
+  /// Free-form labels that cut across categories — "Japan trip", "work",
+  /// "reimbursable". A transaction has one category but any number of tags,
+  /// which is what makes them worth having.
+  List<String> tags;
+
+  /// Set when this movement is a repayment against a [Debt].
+  String? debtId;
+
+  /// Set when this movement is an installment paid against an [Emi]. The
+  /// money really left an account, so the row is an ordinary expense like any
+  /// other; this only records *what it was for*, which no category can say.
+  String? emiId;
+
+  /// Set on each row of a split purchase (one receipt, several categories).
+  /// The rows are ordinary transactions sharing this id, so every balance,
+  /// budget and chart in the app counts them correctly without knowing
+  /// splits exist — only the UI groups them back together.
+  String? splitGroupId;
+
   Transaction({
     String? id,
     this.note = '',
@@ -461,7 +506,12 @@ class Transaction {
     this.customCategoryId,
     this.accountId,
     this.toAccountId,
+    List<String>? tags,
+    this.splitGroupId,
+    this.debtId,
+    this.emiId,
   })  : id = id ?? newId(),
+        tags = tags ?? [],
         date = date ?? DateTime.now(),
         recurrenceRuleRaw = recurrenceRule.raw,
         nextDueDate = nextDueDate ??
@@ -484,6 +534,10 @@ class Transaction {
         'customCategoryId': customCategoryId,
         'accountId': accountId,
         'toAccountId': toAccountId,
+        'tags': tags,
+        'splitGroupId': splitGroupId,
+        'debtId': debtId,
+        'emiId': emiId,
       };
 
   factory Transaction.fromJson(Map j) {
@@ -499,6 +553,14 @@ class Transaction {
       customCategoryId: j['customCategoryId'] as String?,
       accountId: j['accountId'] as String?,
       toAccountId: j['toAccountId'] as String?,
+      // Absent in data written before tags/splits existed.
+      tags: ((j['tags'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      splitGroupId: j['splitGroupId'] as String?,
+      debtId: j['debtId'] as String?,
+      // Absent in data written before installments could be recorded.
+      emiId: j['emiId'] as String?,
     );
     t.recurrenceRuleRaw =
         j['recurrenceRuleRaw'] as String? ?? RecurrenceRule.monthly.raw;
@@ -595,6 +657,95 @@ class Emi {
         startDate:
             DateTime.fromMillisecondsSinceEpoch((j['startDate'] as num).toInt()),
       );
+}
+
+/// Money lent to someone, or borrowed from them — the "Rahul owes me ₹500"
+/// ledger that sits outside accounts.
+///
+/// Lending is a real movement: the cash genuinely left an account, so that
+/// side is an ordinary [Transaction] like any other and the account balance
+/// stays honest. This record only tracks *who owes what*, which no account
+/// balance can express. Repayments are real movements too, so the amount
+/// settled is derived from transactions tagged with this debt's id rather
+/// than stored — the same rule balances and savings goals follow.
+class Debt {
+  final String id;
+  String person;
+
+  /// The original amount. What's still outstanding is derived: see
+  /// `AppStore.outstandingOn`.
+  double amount;
+
+  /// true  — they took money from me and owe it back.
+  /// false — I took money from them and owe it back.
+  bool theyOweMe;
+
+  DateTime date;
+  DateTime? dueDate;
+  String note;
+
+  /// The account the money moved through, when it was recorded against one.
+  String? accountId;
+
+  /// Set once the debt is closed out by hand (e.g. written off, or settled in
+  /// a way that never touched a tracked account).
+  DateTime? settledDate;
+
+  /// An agreed repayment per month, when there is one — "Rahul pays me back
+  /// ₹200 a month". Null means the debt has no schedule and simply sits open
+  /// until someone settles it. A plan is what lets a debt appear in Upcoming
+  /// alongside every other commitment instead of being invisible until due.
+  double? monthlyRepayment;
+
+  Debt({
+    String? id,
+    required this.person,
+    required this.amount,
+    required this.theyOweMe,
+    DateTime? date,
+    this.dueDate,
+    this.note = '',
+    this.accountId,
+    this.settledDate,
+    this.monthlyRepayment,
+  })  : id = id ?? newId(),
+        date = date ?? DateTime.now();
+
+  bool get isSettled => settledDate != null;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'person': person,
+        'amount': amount,
+        'theyOweMe': theyOweMe,
+        'date': date.millisecondsSinceEpoch,
+        'dueDate': dueDate?.millisecondsSinceEpoch,
+        'note': note,
+        'accountId': accountId,
+        'settledDate': settledDate?.millisecondsSinceEpoch,
+        'monthlyRepayment': monthlyRepayment,
+      };
+
+  factory Debt.fromJson(Map j) {
+    DateTime? at(String key) {
+      final v = j[key];
+      return v == null ? null : DateTime.fromMillisecondsSinceEpoch((v as num).toInt());
+    }
+
+    return Debt(
+      id: j['id'] as String,
+      person: j['person'] as String? ?? '',
+      amount: (j['amount'] as num).toDouble(),
+      theyOweMe: j['theyOweMe'] as bool? ?? true,
+      date: at('date') ?? DateTime.now(),
+      dueDate: at('dueDate'),
+      note: j['note'] as String? ?? '',
+      accountId: j['accountId'] as String?,
+      settledDate: at('settledDate'),
+      // Absent in data written before debts could carry a schedule.
+      monthlyRepayment: (j['monthlyRepayment'] as num?)?.toDouble(),
+    );
+  }
 }
 
 extension _FirstOrNull<E> on Iterable<E> {

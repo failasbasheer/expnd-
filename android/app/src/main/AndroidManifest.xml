@@ -5,13 +5,22 @@
     <!-- No INTERNET permission: EXPND makes no network requests. Debug/profile
          builds get it injected automatically so hot reload works; release does not. -->
 
-    <!-- androidx.work (pulled in transitively by home_widget) merges these four in.
+    <!-- The daily "log your spending" reminder (flutter_local_notifications).
+         Scheduled on-device by AlarmManager; nothing is pushed from a server.
+         RECEIVE_BOOT_COMPLETED lets the plugin re-arm it after a restart —
+         without it the reminder silently stops the first time the phone
+         reboots. Deliberately NOT requesting SCHEDULE_EXACT_ALARM: a nudge
+         doesn't need to be minute-exact, and Play treats it as a restricted
+         permission requiring justification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- androidx.work (pulled in transitively by home_widget) merges these in.
          WorkManager is never invoked: the widget is refreshed synchronously via
          HomeWidget.updateWidget from the app process, and no interactivity/background
          callback is ever registered. Strip them so the Play listing's permission list
          matches what the app actually does. If a background widget callback is ever
          added, these must come back. -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>

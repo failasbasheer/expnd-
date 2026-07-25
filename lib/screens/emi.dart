@@ -14,11 +14,16 @@ import '../widgets/neopop.dart';
 // Credit summary + ongoing EMIs (shown under a credit-card account)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The credit limit / used / available breakdown plus the list of ongoing EMIs
-/// for a credit-card account. Rendered inside the Wallet account detail.
-class CreditEmiSection extends StatelessWidget {
+/// The loans and installment plans running against an account, plus — for a
+/// credit card — the limit / used / available breakdown above them.
+///
+/// Loans are not a credit-card-only idea: a car, personal or home loan sits
+/// against a bank account and is repaid from it, and the amortization model
+/// never cared which kind of account it hung off. Only this section used to,
+/// so the whole feature was invisible unless you owned a credit card.
+class AccountLoansSection extends StatelessWidget {
   final Account account;
-  const CreditEmiSection({super.key, required this.account});
+  const AccountLoansSection({super.key, required this.account});
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +31,7 @@ class CreditEmiSection extends StatelessWidget {
     final store = context.watch<AppStore>();
     final code = context.watch<SettingsStore>().currencyCode;
     final emis = store.emisForAccount(account.id);
+    final isCredit = account.type == AccountType.credit;
     final limit = account.creditLimit ?? 0;
     final used = store.creditUsedFor(account);
     final available = store.creditAvailableFor(account);
@@ -42,6 +48,7 @@ class CreditEmiSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (isCredit) ...[
             Text('CREDIT SUMMARY',
                 style: TextStyle(
                     fontSize: 11,
@@ -86,15 +93,20 @@ class CreditEmiSection extends StatelessWidget {
             const SizedBox(height: 16),
             Container(height: 1, color: oc.border),
             const SizedBox(height: 12),
+            ],
             Row(
               children: [
-                Text('ONGOING EMIs',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                        color: oc.muted)),
-                const Spacer(),
+                Expanded(
+                  child: Text(isCredit ? 'ONGOING EMIs' : 'LOANS & EMIs',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          color: oc.muted)),
+                ),
+                const SizedBox(width: 8),
                 NeoPopButton(
                   onPressed: () {
                     Haptics.light();
@@ -110,7 +122,7 @@ class CreditEmiSection extends StatelessWidget {
                       children: [
                         Icon(sfIcon('plus'), size: 10, color: ExpndColors.ink),
                         const SizedBox(width: 5),
-                        Text('ADD EMI',
+                        Text(isCredit ? 'ADD EMI' : 'ADD LOAN',
                             style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w900,
@@ -127,7 +139,9 @@ class CreditEmiSection extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                    'No EMIs yet. Add a loan or purchase installment to track it here — it reduces your available credit as it runs.',
+                    isCredit
+                        ? 'No EMIs yet. Add a loan or purchase installment to track it here — it reduces your available credit as it runs.'
+                        : 'No loans yet. Add a car, personal or home loan to track its balance, interest and monthly payment here.',
                     style: TextStyle(fontSize: 12, color: oc.dimmed)),
               )
             else
@@ -198,14 +212,18 @@ class _EmiRow extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Text(
-                  done
-                      ? 'Completed · ${emi.tenureMonths} mo'
-                      : 'Paid ${emi.monthsPaid}/${emi.tenureMonths} mo',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: oc.muted)),
+              Flexible(
+                child: Text(
+                    done
+                        ? 'Completed · ${emi.tenureMonths} mo'
+                        : 'Paid ${emi.monthsPaid}/${emi.tenureMonths} mo',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: oc.muted)),
+              ),
               const Spacer(),
               Text(
                   done
@@ -214,6 +232,58 @@ class _EmiRow extends StatelessWidget {
                   style: TextStyle(fontSize: 11, color: oc.dimmed)),
             ],
           ),
+          // What has actually been recorded as paid, which the schedule above
+          // can't say — it only knows how many months have gone by.
+          Builder(builder: (context) {
+            final store = context.watch<AppStore>();
+            final logged = store.installmentsOn(emi).length;
+            final paidThisMonth = store.isInstallmentPaid(emi, DateTime.now());
+            if (done && logged == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                        logged == 0
+                            ? 'No payments recorded'
+                            : '$logged recorded · '
+                                '${formatCurrency(store.paidOn(emi), code)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, color: oc.dimmed)),
+                  ),
+                  const Spacer(),
+                  if (!done)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: paidThisMonth
+                          ? null
+                          : () => showPayInstallment(context, emi),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: paidThisMonth
+                                  ? oc.border
+                                  : ExpndColors.gold.withValues(alpha: 0.6),
+                              width: 1.5),
+                        ),
+                        child: Text(
+                            paidThisMonth ? 'PAID THIS MONTH' : 'MARK PAID',
+                            style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                                color: paidThisMonth ? oc.dimmed : oc.accent)),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -661,3 +731,258 @@ Widget _field(ExpndColors oc, {required Widget child}) => Container(
       ),
       child: child,
     );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mark an installment paid
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Records one installment of [emi] as really paid.
+///
+/// An EMI schedule is a plan; paying it is a fact, and until now the app held
+/// only the plan — the money left your bank every month and nothing in EXPND
+/// moved. This writes an ordinary expense against the account the cash
+/// actually came from, tagged to the EMI.
+///
+/// The funding account is asked for rather than assumed: the installment
+/// usually leaves a bank account, while the EMI itself hangs off the card it
+/// was taken on, and a credit card's balance here is set by hand — so posting
+/// against the card by default would quietly count the same money twice.
+Future<bool> showPayInstallment(BuildContext context, Emi emi) async {
+  final paid = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PayInstallmentSheet(emi: emi),
+  );
+  return paid ?? false;
+}
+
+class _PayInstallmentSheet extends StatefulWidget {
+  final Emi emi;
+  const _PayInstallmentSheet({required this.emi});
+
+  @override
+  State<_PayInstallmentSheet> createState() => _PayInstallmentSheetState();
+}
+
+class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
+  String? _accountId;
+  late final TextEditingController _amountCtrl = TextEditingController(
+      text: widget.emi.monthlyAmount.toStringAsFixed(2));
+
+  @override
+  void initState() {
+    super.initState();
+    final accounts = context.read<AppStore>().accounts;
+    // Default to somewhere the money could plausibly come from — a bank or
+    // cash account before the card the EMI is attached to.
+    final funding = accounts.where((a) =>
+        a.type == AccountType.bank ||
+        a.type == AccountType.cash ||
+        a.type == AccountType.savings);
+    _accountId = funding.isNotEmpty
+        ? funding.first.id
+        : (accounts.isNotEmpty ? accounts.first.id : null);
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
+  bool get _isValid => _amount > 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    final store = context.watch<AppStore>();
+    final code = context.watch<SettingsStore>().currencyCode;
+    final e = widget.emi;
+    final accounts = store.accounts;
+    final insets = MediaQuery.of(context).viewInsets.bottom;
+    final n = (e.monthsPaid + 1).clamp(1, e.tenureMonths);
+
+    return Container(
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85 - insets),
+      margin: EdgeInsets.only(bottom: insets),
+      decoration: BoxDecoration(
+        color: oc.bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 10),
+          Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: oc.border, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 10),
+          Text('MARK INSTALLMENT PAID',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  color: oc.text)),
+          const SizedBox(height: 2),
+          Text(
+              '${e.name.trim().isEmpty ? 'EMI' : e.name.trim()} · '
+              'installment $n of ${e.tenureMonths}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: oc.muted)),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              children: [
+                _label('AMOUNT', oc),
+                const SizedBox(height: 8),
+                _field(oc,
+                    child: Row(
+                      children: [
+                        Text(currencySymbol(code),
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: oc.accent)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextField(
+                            controller: _amountCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            inputFormatters: amountInputFormatters,
+                            onChanged: (_) => setState(() {}),
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: oc.text),
+                            decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                isDense: true,
+                                hintText: '0.00'),
+                          ),
+                        ),
+                      ],
+                    )),
+                const SizedBox(height: 6),
+                Text(
+                    'Scheduled ${formatCurrency(e.monthlyAmount, code)} — '
+                    "edit if your lender's rounding differs.",
+                    style: TextStyle(fontSize: 10, color: oc.dimmed)),
+                const SizedBox(height: 20),
+                _label('PAY FROM', oc),
+                const SizedBox(height: 8),
+                if (accounts.isEmpty)
+                  Text('No accounts yet — the payment will be recorded without one.',
+                      style: TextStyle(fontSize: 12, color: oc.muted))
+                else
+                  for (final a in accounts) _accountOption(oc, store, a, code),
+                const SizedBox(height: 20),
+                _payButton(oc),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _accountOption(
+      ExpndColors oc, AppStore store, Account a, String code) {
+    final selected = _accountId == a.id;
+    final tint = hexColor(a.colorHex);
+    final isCard = a.type == AccountType.credit;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Haptics.light();
+        setState(() => _accountId = a.id);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? ExpndColors.gold.withValues(alpha: 0.12) : oc.surface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: selected ? ExpndColors.gold : oc.border, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Icon(sfIcon(selected ? 'checkmark.circle.fill' : 'circle'),
+                size: 16, color: selected ? ExpndColors.gold : oc.dimmed),
+            const SizedBox(width: 10),
+            Icon(sfIcon(a.type.icon), size: 13, color: tint),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(a.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: oc.text)),
+            ),
+            const SizedBox(width: 8),
+            Text(
+                isCard
+                    ? 'the card itself'
+                    : formatCurrency(store.balanceFor(a), code),
+                style: TextStyle(
+                    fontSize: 10,
+                    fontStyle: isCard ? FontStyle.italic : FontStyle.normal,
+                    color: oc.dimmed)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _payButton(ExpndColors oc) {
+    return NeoPopButton(
+      onPressed: () {
+        if (!_isValid) return;
+        context
+            .read<AppStore>()
+            .payEmiInstallment(widget.emi,
+                accountId: _accountId, amount: _amount);
+        Haptics.success();
+        FocusManager.instance.primaryFocus?.unfocus();
+        Navigator.of(context).pop(true);
+      },
+      enabled: _isValid,
+      faceColor: _isValid ? ExpndColors.gold : oc.surface,
+      depthColor: _isValid ? ExpndColors.goldDark : oc.edge,
+      depth: 4,
+      cornerRadius: 6,
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(sfIcon('checkmark.circle.fill'),
+                  size: 14, color: _isValid ? ExpndColors.ink : oc.dimmed),
+              const SizedBox(width: 8),
+              Text('POST PAYMENT',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      color: _isValid ? ExpndColors.ink : oc.dimmed)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+6
+version: 1.0.1+7
 
 environment:
   sdk: ^3.12.2
@@ -48,6 +48,11 @@ dependencies:
   # Shares a data snapshot with the native home-screen widgets (iOS WidgetKit
   # via an App Group, Android via the AppWidgetProvider).
   home_widget: ^0.7.0
+  flutter_local_notifications: ^22.1.0
+  flutter_timezone: ^5.1.0
+  timezone: ^0.11.1
+  # Renders the monthly statement as a real, branded PDF document.
+  pdf: ^3.11.0
 
 dev_dependencies:
   flutter_test:
@@ -92,6 +97,10 @@ flutter:
 
   assets:
     - assets/brand/expnd_E.png
+    # Embedded in the generated PDF statement — covers ₹, €, £, ¥ and other
+    # currency glyphs the built-in PDF fonts can't render.
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

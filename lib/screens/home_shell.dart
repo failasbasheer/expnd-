@@ -1,24 +1,33 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/insights.dart';
+import '../services/upcoming.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
+import '../widgets/app_header.dart';
 import '../widgets/neopop.dart';
 import '../widgets/neopop_cards.dart';
+import '../widgets/privacy_eye.dart';
 import 'add_transaction.dart';
 import 'transaction_detail.dart';
 import 'analytics_view.dart';
 import 'wallet_view.dart';
 import 'history_view.dart';
-import 'profile_view.dart';
+import 'plan_view.dart';
+import 'settings_view.dart';
+import 'upcoming_view.dart';
 
-enum ExpndTab { dashboard, analytics, wallet, profile }
+enum ExpndTab { dashboard, analytics, wallet, plan }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -39,9 +48,30 @@ class _HomeShellState extends State<HomeShell> {
   // When the just-added expense pushed its category over budget, the toast
   // shows an over-budget warning instead of the usual "Transaction Added".
   ({double limit, double spent, double over})? _toastOverage;
+  // Recurring transactions auto-posted during boot. Takes over the toast slot
+  // on first frame so the balance never moves without an explanation.
+  List<Transaction>? _recurringPosted;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showRecurringNotice());
+  }
+
+  void _showRecurringNotice() {
+    if (!mounted) return;
+    final posted = context.read<AppStore>().takeRecurringNotice();
+    if (posted.isEmpty) return;
+    setState(() {
+      _recurringPosted = posted;
+      _showToast = true;
+    });
+    Future.delayed(const Duration(milliseconds: 4000), () {
+      if (mounted) setState(() => _showToast = false);
+    });
+  }
 
   void _openAccountInWallet(String accountId) {
-    debugPrint('[wallet-focus] tapped account id=$accountId');
     setState(() {
       _walletFocus = accountId;
       _tab = ExpndTab.wallet;
@@ -62,7 +92,11 @@ class _HomeShellState extends State<HomeShell> {
       final added = store.transactions.first;
       setState(() {
         _toast = added;
-        _toastOverage = store.categoryBudgetOverage(added);
+        _toastOverage = store.categoryBudgetOverage(
+          added,
+          rollover: context.read<SettingsStore>().budgetRollover,
+        );
+        _recurringPosted = null; // the new transaction owns the toast now
         _showToast = true;
       });
       // Over-budget toast lingers a touch longer so the warning registers.
@@ -78,6 +112,12 @@ class _HomeShellState extends State<HomeShell> {
     final oc = context.oc;
     return Scaffold(
       backgroundColor: oc.bg,
+      // The tab bar is translucent, so the body has to run underneath it —
+      // otherwise there is nothing behind the glass to blur and it just reads
+      // as a flat tint. Tab screens reserve the bar's height via
+      // [ExpndSpacing.scrollBottomUnderTabBar], which Scaffold reports to the
+      // body as MediaQuery.padding.bottom.
+      extendBody: true,
       body: Stack(
         children: [
           SafeArea(
@@ -88,6 +128,7 @@ class _HomeShellState extends State<HomeShell> {
                 _DashboardView(
                   onAdd: () => _openAdd(),
                   onOpenAccount: _openAccountInWallet,
+                  onOpenPlan: () => setState(() => _tab = ExpndTab.plan),
                 ),
                 const AnalyticsView(),
                 WalletView(
@@ -98,7 +139,7 @@ class _HomeShellState extends State<HomeShell> {
                     }
                   },
                 ),
-                const ProfileView(),
+                const PlanView(),
               ],
             ),
           ),
@@ -112,7 +153,15 @@ class _HomeShellState extends State<HomeShell> {
             child: AnimatedOpacity(
               opacity: _showToast ? 1 : 0,
               duration: const Duration(milliseconds: 250),
-              child: _toast == null
+              child: _recurringPosted != null
+                  ? _RecurringToast(
+                      posted: _recurringPosted!,
+                      onTap: () {
+                        setState(() => _showToast = false);
+                        showUpcoming(context);
+                      },
+                    )
+                  : _toast == null
                   ? const SizedBox.shrink()
                   : _ToastBanner(transaction: _toast!, overage: _toastOverage),
             ),
@@ -245,83 +294,109 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    return Container(
-      color: oc.surface,
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Align(
-                alignment: Alignment.topCenter,
-                child: Container(height: 2, color: oc.edge),
+    final light = Theme.of(context).brightness == Brightness.light;
+    // A translucent plate rather than a full glassmorphic restyle: the bar
+    // keeps its square corners and hard 2px top edge, and only the fill
+    // becomes a material that scrolled content blurs through. The FAB stays
+    // solid — a see-through primary action reads as broken.
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        // Positioned.fill matches the bar's laid-out size exactly, and
+        // ClipRect keeps the blur from bleeding past it. The FAB lives in the
+        // content layer above this one, so it is never clipped and can still
+        // sit proud of the bar.
+        Positioned.fill(
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: ColoredBox(
+                // Light mode blurs near-white content under a near-white
+                // surface, so the plate has to stay thin enough for the warmer
+                // page bg and any colour underneath to tint through — opaque
+                // white would read as flat paint, not glass.
+                color: oc.surface.withValues(alpha: light ? 0.62 : 0.60),
               ),
-              Row(
-                children: [
-                  _tabButton(context, 'house.fill', 'HOME', ExpndTab.dashboard),
-                  _tabButton(
-                    context,
-                    'chart.bar.xaxis',
-                    'ANALYTICS',
-                    ExpndTab.analytics,
-                  ),
-                  // Gap slot that holds the FAB, so it always sits centered in
-                  // the space between the two tab groups instead of overlapping
-                  // the WALLET tab.
-                  Expanded(
-                    child: Center(
-                      child: Transform.translate(
-                        offset: const Offset(0, -14),
-                        child: Semantics(
-                          button: true,
-                          label: 'Add transaction',
-                          child: NeoPopButton(
-                            onPressed: onAdd,
-                            faceColor: ExpndColors.gold,
-                            depthColor: ExpndColors.goldDark,
-                            // On the near-white light tab bar the gold face
-                            // loses its edge; add an ink hairline in light mode
-                            // only so the FAB stays the clear primary action.
-                            borderColor:
-                                Theme.of(context).brightness == Brightness.light
-                                    ? ExpndColors.ink.withValues(alpha: 0.85)
-                                    : null,
-                            depth: 4,
-                            cornerRadius: 30,
-                            child: SizedBox(
-                              width: 56,
-                              height: 56,
-                              child: Icon(
-                                sfIcon('plus'),
-                                size: 24,
-                                color: ExpndColors.ink,
+            ),
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 64,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Container(height: 2, color: oc.edge),
+                ),
+                Row(
+                  children: [
+                    _tabButton(
+                      context,
+                      'house.fill',
+                      'HOME',
+                      ExpndTab.dashboard,
+                    ),
+                    _tabButton(
+                      context,
+                      'chart.bar.xaxis',
+                      'ANALYTICS',
+                      ExpndTab.analytics,
+                    ),
+                    // Gap slot that holds the FAB, so it always sits centered in
+                    // the space between the two tab groups instead of overlapping
+                    // the WALLET tab.
+                    Expanded(
+                      child: Center(
+                        child: Transform.translate(
+                          offset: const Offset(0, -14),
+                          child: Semantics(
+                            button: true,
+                            label: 'Add transaction',
+                            child: NeoPopButton(
+                              onPressed: onAdd,
+                              faceColor: ExpndColors.gold,
+                              depthColor: ExpndColors.goldDark,
+                              // On the near-white light tab bar the gold face
+                              // loses its edge; add an ink hairline in light mode
+                              // only so the FAB stays the clear primary action.
+                              borderColor:
+                                  Theme.of(context).brightness ==
+                                      Brightness.light
+                                  ? ExpndColors.ink.withValues(alpha: 0.85)
+                                  : null,
+                              depth: 4,
+                              cornerRadius: 30,
+                              child: SizedBox(
+                                width: 56,
+                                height: 56,
+                                child: Icon(
+                                  sfIcon('plus'),
+                                  size: 24,
+                                  color: ExpndColors.ink,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  _tabButton(
-                    context,
-                    'creditcard.fill',
-                    'WALLET',
-                    ExpndTab.wallet,
-                  ),
-                  _tabButton(
-                    context,
-                    'person.fill',
-                    'PROFILE',
-                    ExpndTab.profile,
-                  ),
-                ],
-              ),
-            ],
+                    _tabButton(
+                      context,
+                      'creditcard.fill',
+                      'WALLET',
+                      ExpndTab.wallet,
+                    ),
+                    _tabButton(context, 'target', 'PLAN', ExpndTab.plan),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -332,7 +407,9 @@ class _TabBar extends StatelessWidget {
     ExpndTab tab,
   ) {
     final active = selected == tab;
-    final color = active ? context.oc.accent : context.oc.dimmed;
+    // Inactive uses `muted` (#8A8A8A, ~AA on the bar), not `dimmed` (#5A5A5A,
+    // ~3:1) — the label is small, so it needs the extra contrast to stay legible.
+    final color = active ? context.oc.accent : context.oc.muted;
     return Expanded(
       child: Semantics(
         button: true,
@@ -356,13 +433,18 @@ class _TabBar extends StatelessWidget {
                   child: Icon(sfIcon(icon), size: 19, color: color),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.8,
-                    color: color,
+                // Tab labels are chrome inside a fixed-height (64pt) bar, so
+                // they don't scale with Dynamic Type — otherwise a large system
+                // text size overflows the bar. 10pt reads clearly on its own.
+                MediaQuery.withNoTextScaling(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.6,
+                      color: color,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -477,7 +559,10 @@ class _ToastBanner extends StatelessWidget {
   // over its monthly limit the spend now is. Purely informational — the
   // transaction was already saved (soft limits).
   Widget _overBudget(
-      BuildContext context, ExpndColors oc, SettingsStore settings) {
+    BuildContext context,
+    ExpndColors oc,
+    SettingsStore settings,
+  ) {
     final o = overage!;
     final code = settings.currencyCode;
     return NeoPopElevated(
@@ -498,8 +583,11 @@ class _ToastBanner extends StatelessWidget {
                 color: ExpndColors.red.withValues(alpha: 0.18),
                 shape: BoxShape.circle,
               ),
-              child: Icon(sfIcon('exclamationmark.triangle.fill'),
-                  size: 16, color: ExpndColors.red),
+              child: Icon(
+                sfIcon('exclamationmark.triangle.fill'),
+                size: 16,
+                color: ExpndColors.red,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -535,6 +623,247 @@ class _ToastBanner extends StatelessWidget {
   }
 }
 
+/// Tells the user that recurring transactions posted themselves on launch.
+/// Without this the balance simply changes between sessions with no account of
+/// why. Tapping opens Upcoming, so the next ones are no longer a surprise.
+class _RecurringToast extends StatelessWidget {
+  final List<Transaction> posted;
+  final VoidCallback onTap;
+  const _RecurringToast({required this.posted, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    final code = context.read<SettingsStore>().currencyCode;
+    final net = posted.fold<double>(
+      0,
+      (s, t) =>
+          s +
+          (t.type == TransactionType.income
+              ? t.amount
+              : t.type == TransactionType.expense
+              ? -t.amount
+              : 0),
+    );
+    final names = posted
+        .map((t) => t.note.trim().isNotEmpty ? t.note.trim() : t.category.raw)
+        .toSet()
+        .toList();
+    final shown = names.take(3).join(', ');
+    final extra = names.length > 3 ? ' +${names.length - 3} more' : '';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Haptics.light();
+        onTap();
+      },
+      child: NeoPopElevated(
+        faceColor: oc.surface,
+        depthColor: oc.edge,
+        borderColor: oc.border,
+        depth: 4,
+        cornerRadius: 6,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ExpndColors.gold.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(sfIcon('repeat'), size: 16, color: oc.accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${posted.length} recurring '
+                      '${posted.length == 1 ? "transaction" : "transactions"} '
+                      'posted',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: oc.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$shown$extra · '
+                      '${net < 0 ? "−" : "+"}${formatCurrency(net.abs(), code)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: net < 0 ? ExpndColors.red : ExpndColors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(sfIcon('chevron.right'), size: 14, color: oc.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard identity — the greeting, and the wordmark it hands back to
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Greets you once a day, then gets out of the way.
+///
+/// The first time the dashboard is built on a new calendar day it shows "GOOD
+/// MORNING / `name`"; a few seconds later that retires into the EXPND wordmark,
+/// and every later open the same day starts there. Deliberately not a
+/// permanent fixture: a greeting you see twenty times a day stops reading as
+/// one, and it would be the first thing in the way every time you tabbed home.
+///
+/// Both states stay mounted in a [Stack] so the row keeps a single height —
+/// the balance card below must not jump when the greeting hands over.
+class _GreetingIdentity extends StatefulWidget {
+  const _GreetingIdentity();
+
+  @override
+  State<_GreetingIdentity> createState() => _GreetingIdentityState();
+}
+
+class _GreetingIdentityState extends State<_GreetingIdentity> {
+  /// Long enough to read a name, short enough that it's gone before you've
+  /// finished taking in the balance.
+  static const _hold = Duration(milliseconds: 4000);
+  static const _handover = Duration(milliseconds: 450);
+
+  bool _greeting = false;
+  Timer? _timer;
+
+  static int _dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsStore>();
+    final today = _dayKey(DateTime.now());
+    if (settings.lastGreetedDay == today) return;
+
+    _greeting = true;
+    // Stamped after the frame, not here: the setter notifies listeners, and
+    // initState runs mid-build. Stamping on *show* rather than on hand-over
+    // means a relaunch two seconds later doesn't earn a second greeting.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SettingsStore>().lastGreetedDay = today;
+    });
+    _timer = Timer(_hold, () {
+      if (mounted) setState(() => _greeting = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String get _salutation {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'GOOD MORNING';
+    if (h < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    final name = context.watch<SettingsStore>().userName.trim();
+    // 'Your Name' is the placeholder the setup screen ships with — greeting
+    // someone by it would be worse than not naming them at all.
+    final named = name.isNotEmpty && name != 'Your Name';
+
+    return Stack(
+      children: [
+        // Laid out whether or not it's visible, so the taller of the two fixes
+        // the row height for good.
+        _phase(
+          visible: _greeting,
+          rise: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _salutation,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: named ? 10 : 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  color: named ? oc.accent : oc.text,
+                ),
+              ),
+              if (named) ...[
+                const SizedBox(height: 3),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                    color: oc.text,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        _phase(
+          visible: !_greeting,
+          rise: false,
+          child: const HeaderTitle(icon: 'house.fill', title: 'EXPND'),
+        ),
+      ],
+    );
+  }
+
+  /// One of the two states, fading and sliding a little as it takes or gives
+  /// up the row. [rise] sends it upward on the way out (the greeting leaving);
+  /// the wordmark comes up from below to replace it.
+  Widget _phase({
+    required bool visible,
+    required bool rise,
+    required Widget child,
+  }) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: _handover,
+        curve: Curves.easeOut,
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : Offset(0, rise ? -0.35 : 0.35),
+          duration: _handover,
+          curve: Curves.easeOut,
+          child: ExcludeSemantics(excluding: !visible, child: child),
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
@@ -542,8 +871,15 @@ class _ToastBanner extends StatelessWidget {
 class _DashboardView extends StatefulWidget {
   final VoidCallback onAdd;
   final ValueChanged<String> onOpenAccount;
-  const _DashboardView(
-      {required this.onAdd, required this.onOpenAccount});
+
+  /// Budgets are owned by the PLAN tab, so the dashboard's budget bar hands off
+  /// there rather than duplicating the controls.
+  final VoidCallback onOpenPlan;
+  const _DashboardView({
+    required this.onAdd,
+    required this.onOpenAccount,
+    required this.onOpenPlan,
+  });
 
   @override
   State<_DashboardView> createState() => _DashboardViewState();
@@ -591,6 +927,10 @@ class _DashboardViewState extends State<_DashboardView> {
         .where((t) => t.type == TransactionType.expense && _isToday(t.date))
         .fold(0.0, (s, t) => s + t.amount);
 
+    // Projected forward from today regardless of which month is on screen; the
+    // card that renders it is hidden unless the current month is showing.
+    final upcoming = projectUpcoming(store);
+
     final lastMonth = DateTime(_displayMonth.year, _displayMonth.month - 1);
     final lastMonthNet = store.transactions
         .where(
@@ -609,17 +949,19 @@ class _DashboardViewState extends State<_DashboardView> {
     // list snapping to a new height.
     return Container(
       color: oc.bg,
-      // The month navigator stays pinned at the top; everything below scrolls
-      // beneath it, so the current month is always in view.
+      // The header stays pinned at the top; everything below scrolls beneath
+      // it, so the current month is always in view.
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: _monthNavigator(context),
-          ),
+          _header(context, upcoming.length),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                ExpndSpacing.scrollBottomUnderTabBar(context),
+              ),
               children: [
                 _slot(
                   1,
@@ -641,16 +983,40 @@ class _DashboardViewState extends State<_DashboardView> {
                 _slot(
                   3,
                   settings.monthlyBudget > 0
-                      ? _budgetBar(context, expenses, settings.monthlyBudget, code)
+                      ? _budgetBar(
+                          context,
+                          expenses,
+                          settings.budgetRollover
+                              ? store.rolledOverLimit(
+                                  settings.monthlyBudget,
+                                  _displayMonth,
+                                )
+                              : settings.monthlyBudget,
+                          code,
+                        )
                       : null,
                 ),
+                // Forward-looking, so it only belongs on the current month —
+                // it would be nonsense sitting under a past month's figures.
                 _slot(
                   4,
+                  _isCurrentMonth && upcoming.isNotEmpty
+                      ? _upcomingCard(context, store, upcoming, code)
+                      : null,
+                ),
+                // Only for the month you're actually in: an insight is a
+                // read on where things stand now, not a history lesson.
+                _slot(
+                  5,
+                  _isCurrentMonth ? _insightsStrip(context, store, code) : null,
+                ),
+                _slot(
+                  6,
                   store.accounts.isNotEmpty
                       ? _accountsRow(context, store, code)
                       : null,
                 ),
-                _slot(5, _transactionsCard(context, store, filtered, code)),
+                _slot(7, _transactionsCard(context, store, filtered, code)),
               ],
             ),
           ),
@@ -680,76 +1046,156 @@ class _DashboardViewState extends State<_DashboardView> {
     return d.year == n.year && d.month == n.month && d.day == n.day;
   }
 
-  // Month navigator
-  Widget _monthNavigator(BuildContext context) {
+  // Dashboard header: identity row (greeting or wordmark) over the month strip.
+  Widget _header(BuildContext context, int upcomingCount) {
     final oc = context.oc;
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 4,
-      cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Row(
-          children: [
-            IconButton(
-              icon: Icon(sfIcon('chevron.left'), size: 14, color: oc.accent),
-              onPressed: () {
-                Haptics.light();
-                setState(
-                  () => _displayMonth = DateTime(
-                    _displayMonth.year,
-                    _displayMonth.month - 1,
-                  ),
-                );
-              },
-            ),
-            const Spacer(),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _monthLabel(_displayMonth),
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                    color: oc.text,
-                  ),
-                ),
-                if (_isCurrentMonth)
-                  Text(
-                    'CURRENT MONTH',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: oc.accent,
+    return ExpndHeader(
+      leading: const _GreetingIdentity(),
+      actions: [
+        HeaderAction.custom(
+          semanticLabel: 'Hide or show amounts',
+          // Lifted out of the gold balance card, where a piece of chrome had
+          // been wedged in beside the NET BALANCE label.
+          child: PrivacyEyeButton(
+            color: oc.muted,
+            size: 15,
+            padding: const EdgeInsets.all(10),
+          ),
+        ),
+        // No calendar button here: the Upcoming card in the body opens the
+        // same screen from its "VIEW ALL" row, and does it with the count and
+        // committed total already in view. Two doors to one room is what made
+        // this bar feel busy.
+        const SettingsAvatarAction(),
+      ],
+      below: _monthStrip(context),
+    );
+  }
+
+  void _shiftMonth(int by) {
+    Haptics.light();
+    setState(
+      () => _displayMonth = DateTime(
+        _displayMonth.year,
+        _displayMonth.month + by,
+      ),
+    );
+  }
+
+  /// The month switcher, flattened.
+  ///
+  /// It used to be an elevated neoPOP block — the same visual weight as the
+  /// balance hero directly under it — with two 48pt [IconButton]s and a pair of
+  /// [Spacer]s around a 14pt label, so most of that bar was empty. Navigation
+  /// is chrome; it shouldn't compete with the figures for hierarchy. The old
+  /// "CURRENT MONTH" caption is gone too: it only ever appeared when the right
+  /// chevron was already disabled, which said the same thing twice. In its
+  /// place, a NOW tag that appears only when you're *off* the current month and
+  /// jumps you back in one tap instead of a run of chevron presses.
+  Widget _monthStrip(BuildContext context) {
+    final oc = context.oc;
+    return SizedBox(
+      height: 34,
+      child: Row(
+        children: [
+          _monthArrow(oc, 'chevron.left', () => _shiftMonth(-1)),
+          Expanded(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      // Uppercased here rather than in _monthLabel: as a bare
+                      // row sitting under the EXPND wordmark it now reads as a
+                      // header label, and every other label at this level of
+                      // the design is caps.
+                      _monthLabel(_displayMonth).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                        color: oc.text,
+                      ),
                     ),
-                  ),
-              ],
-            ),
-            const Spacer(),
-            IconButton(
-              icon: Icon(
-                sfIcon('chevron.right'),
-                size: 14,
-                color: _isCurrentMonth ? oc.dimmed : oc.accent,
-              ),
-              onPressed: _isCurrentMonth
-                  ? null
-                  : () {
-                      Haptics.light();
-                      setState(
-                        () => _displayMonth = DateTime(
-                          _displayMonth.year,
-                          _displayMonth.month + 1,
+                    const SizedBox(width: 8),
+                    if (_isCurrentMonth)
+                      Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: oc.accent,
+                          shape: BoxShape.circle,
                         ),
-                      );
-                    },
+                      )
+                    else
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          Haptics.light();
+                          final now = DateTime.now();
+                          setState(
+                            () => _displayMonth = DateTime(now.year, now.month),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ExpndColors.gold.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: ExpndColors.goldDark.withValues(
+                                alpha: 0.4,
+                              ),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            'NOW',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                              color: oc.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ],
+          ),
+          _monthArrow(
+            oc,
+            'chevron.right',
+            _isCurrentMonth ? null : () => _shiftMonth(1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthArrow(ExpndColors oc, String icon, VoidCallback? onTap) {
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: icon == 'chevron.left' ? 'Previous month' : 'Next month',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 34,
+          child: Icon(
+            sfIcon(icon),
+            size: 15,
+            color: onTap == null ? oc.dimmed : oc.accent,
+          ),
         ),
       ),
     );
@@ -770,6 +1216,9 @@ class _DashboardViewState extends State<_DashboardView> {
     final ink = ExpndColors.ink;
 
     return SizedBox(
+      // Back to 200 now the privacy eye has moved up into the header: the label
+      // row is a bare line of text again, so the 14px this card was carrying
+      // for the eye's tap padding is dead space.
       height: 200,
       child: Stack(
         children: [
@@ -813,7 +1262,13 @@ class _DashboardViewState extends State<_DashboardView> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'NET BALANCE',
+                                    // Month-scoped flow (income − expense for the
+                                    // selected month), not money on hand — the
+                                    // wallet owns "NET WORTH". Naming it "…THIS
+                                    // MONTH" keeps the two from reading as rivals.
+                                    'NET THIS MONTH',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
@@ -864,7 +1319,8 @@ class _DashboardViewState extends State<_DashboardView> {
                                       final diff = balance - lastMonthNet;
                                       final base = lastMonthNet.abs();
                                       final meaningful =
-                                          base >= 1 && base >= balance.abs() * 0.1;
+                                          base >= 1 &&
+                                          base >= balance.abs() * 0.1;
                                       final arrow = diff >= 0 ? '▲' : '▼';
                                       final label = meaningful
                                           ? '$arrow ${((diff / lastMonthNet).abs() * 100).clamp(0, 999).round()}% vs last mo'
@@ -892,12 +1348,21 @@ class _DashboardViewState extends State<_DashboardView> {
                         ),
                         Row(
                           children: [
-                            _balanceStat(
-                              'INCOME',
-                              income,
-                              'arrow.up',
-                              ink,
-                              code,
+                            // Each stat scales down within its half rather than
+                            // pushing the row past its edge when the figures are
+                            // large or the text size is raised.
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: _balanceStat(
+                                  'INCOME',
+                                  income,
+                                  'arrow.up',
+                                  ink,
+                                  code,
+                                ),
+                              ),
                             ),
                             Container(
                               width: 1,
@@ -907,12 +1372,18 @@ class _DashboardViewState extends State<_DashboardView> {
                               ),
                               color: ink.withValues(alpha: 0.15),
                             ),
-                            _balanceStat(
-                              'EXPENSES',
-                              expenses,
-                              'arrow.down',
-                              ink,
-                              code,
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: _balanceStat(
+                                  'EXPENSES',
+                                  expenses,
+                                  'arrow.down',
+                                  ink,
+                                  code,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -970,37 +1441,67 @@ class _DashboardViewState extends State<_DashboardView> {
 
   Widget _todayRow(BuildContext context, double todaySpent, String code) {
     final oc = context.oc;
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 4,
-      cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            Icon(sfIcon('sun.max.fill'), size: 13, color: oc.accent),
-            const SizedBox(width: 10),
-            Text(
-              'TODAY',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-                color: oc.muted,
+    final today = DateTime.now();
+    return Semantics(
+      button: true,
+      label: "Today's spending, opens history for today",
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // The row states a figure without showing what makes it up. Open
+        // history already narrowed to today so the tap answers "spent on what?"
+        // instead of dropping you in the full list to filter it yourself.
+        onTap: () {
+          Haptics.light();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => Scaffold(
+                backgroundColor: oc.bg,
+                body: SafeArea(
+                  bottom: false,
+                  child: HistoryView(
+                    initialStartDate: today,
+                    initialEndDate: today,
+                  ),
+                ),
               ),
             ),
-            const Spacer(),
-            Text(
-              '-${formatCurrency(todaySpent, code)}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: ExpndColors.red,
-              ),
+          );
+        },
+        child: NeoPopElevated(
+          faceColor: oc.surface,
+          depthColor: oc.edge,
+          borderColor: oc.border,
+          depth: 4,
+          cornerRadius: 6,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(sfIcon('sun.max.fill'), size: 13, color: oc.accent),
+                const SizedBox(width: 10),
+                Text(
+                  'TODAY',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                    color: oc.muted,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '-${formatCurrency(todaySpent, code)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: ExpndColors.red,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(sfIcon('chevron.right'), size: 11, color: oc.dimmed),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1020,68 +1521,235 @@ class _DashboardViewState extends State<_DashboardView> {
         : progress >= 0.7
         ? hexColor('EAB308')
         : ExpndColors.green;
+    return Semantics(
+      button: true,
+      label: 'Monthly budget, $pct percent used. Opens budgets in Plan',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Reporting the budget invites changing it, and every budget control
+        // lives on PLAN. Switch tabs rather than growing a second set here.
+        onTap: () {
+          Haptics.light();
+          widget.onOpenPlan();
+        },
+        child: NeoPopElevated(
+          faceColor: oc.surface,
+          depthColor: oc.edge,
+          borderColor: oc.border,
+          depth: 4,
+          cornerRadius: 6,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    // Flexible (no Spacer): the label takes the room the values
+                    // leave, so it shows in full instead of clipping to
+                    // "MONTHLY BU…". Both flexible ends shrink under extreme
+                    // widths/text sizes so the row never overflows.
+                    Flexible(
+                      child: Text(
+                        'MONTHLY BUDGET',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          color: oc.muted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$pct% used',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: barColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // No chevron here, unlike the TODAY row: the whole card is
+                    // the target. The limit gives (ellipsizes) before the label
+                    // does when space is tight.
+                    Flexible(
+                      child: Text(
+                        'of ${formatCurrency(budget, code)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9, color: oc.dimmed),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRect(
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      return Stack(
+                        children: [
+                          Container(height: 6, color: oc.border),
+                          TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0, end: progress),
+                            duration: const Duration(milliseconds: 550),
+                            curve: Curves.easeOutCubic,
+                            builder: (_, value, _) => Container(
+                              height: 6,
+                              width: c.maxWidth * value,
+                              color: barColor,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // A preview of what's coming: the committed total plus the three nearest
+  // movements, with the full timeline a tap away.
+  Widget _upcomingCard(
+    BuildContext context,
+    AppStore store,
+    List<UpcomingItem> upcoming,
+    String code,
+  ) {
+    final oc = context.oc;
+    final summary = summarizeUpcoming(store, upcoming);
+    final preview = upcoming.take(3).toList();
+
     return NeoPopElevated(
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
       depth: 4,
       cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Row(
               children: [
                 Text(
-                  'MONTHLY BUDGET',
+                  'UPCOMING',
                   style: TextStyle(
-                    fontSize: 9,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
                     color: oc.muted,
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '$pct% used',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: barColor,
+                const SizedBox(width: 8),
+                Container(
+                  height: 18,
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: ExpndColors.gold.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: ExpndColors.goldDark.withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    '${upcoming.length}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: oc.accent,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const Spacer(),
                 Text(
-                  'of ${formatCurrency(budget, code)}',
-                  style: TextStyle(fontSize: 9, color: oc.dimmed),
+                  '${kUpcomingHorizonDays}D',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                    color: oc.dimmed,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            ClipRect(
-              child: LayoutBuilder(
-                builder: (context, c) {
-                  return Stack(
-                    children: [
-                      Container(height: 6, color: oc.border),
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: progress),
-                        duration: const Duration(milliseconds: 550),
-                        curve: Curves.easeOutCubic,
-                        builder: (_, value, _) => Container(
-                          height: 6,
-                          width: c.maxWidth * value,
-                          color: barColor,
-                        ),
-                      ),
-                    ],
-                  );
-                },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    'COMMITTED',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                      color: oc.muted,
+                    ),
+                  ),
+                ),
+                Text(
+                  formatCurrency(summary.committedOutflows, code),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                    color: oc.text,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(height: 1, color: oc.border),
+          for (var i = 0; i < preview.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Container(height: 1, color: oc.border),
+              ),
+            UpcomingRow(item: preview[i], code: code, dense: true),
+          ],
+          Container(height: 1, color: oc.border),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Haptics.light();
+              showUpcoming(context);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    upcoming.length > preview.length
+                        ? 'VIEW ALL ${upcoming.length}'
+                        : 'VIEW ALL',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                      color: oc.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(sfIcon('chevron.right'), size: 11, color: oc.accent),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1091,18 +1759,34 @@ class _DashboardViewState extends State<_DashboardView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'ACCOUNTS',
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-            color: oc.muted,
-          ),
+        Row(
+          children: [
+            Text(
+              'ACCOUNTS',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+                color: oc.muted,
+              ),
+            ),
+            const Spacer(),
+            // The row scrolls horizontally; with two cards filling the width
+            // there's no hint more exist. A count + chevron says "swipe for the
+            // rest" so off-screen accounts aren't missed.
+            if (store.accounts.length > 2) ...[
+              Text(
+                '${store.accounts.length} accounts',
+                style: TextStyle(fontSize: 9, color: oc.dimmed),
+              ),
+              const SizedBox(width: 2),
+              Icon(sfIcon('chevron.right'), size: 9, color: oc.dimmed),
+            ],
+          ],
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 80,
+          height: 92,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: store.accounts.length,
@@ -1118,68 +1802,174 @@ class _DashboardViewState extends State<_DashboardView> {
                   widget.onOpenAccount(acc.id);
                 },
                 child: NeoPopElevated(
-                faceColor: oc.surface,
-                depthColor: accColor.withValues(alpha: 0.5),
-                borderColor: accColor.withValues(alpha: 0.4),
-                depth: 3,
-                cornerRadius: 6,
-                child: Container(
-                  width: 172,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            sfIcon(acc.type.icon),
-                            size: 11,
-                            color: accColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            // Common account names ("Chase Checking") were
-                            // clipping mid-word — shrink to fit one line before
-                            // ellipsizing so the full name shows when it can.
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                acc.name,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.3,
-                                  color: oc.text,
+                  faceColor: oc.surface,
+                  depthColor: accColor.withValues(alpha: 0.5),
+                  borderColor: accColor.withValues(alpha: 0.4),
+                  depth: 3,
+                  cornerRadius: 6,
+                  child: Container(
+                    // Narrow enough that a third card peeks past the screen edge
+                    // when there are more than two — reinforcing the swipe hint.
+                    width: 158,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              sfIcon(acc.type.icon),
+                              size: 11,
+                              color: accColor,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              // Common account names ("Chase Checking") were
+                              // clipping mid-word — shrink to fit one line before
+                              // ellipsizing so the full name shows when it can.
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  acc.name,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.3,
+                                    color: oc.text,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        formatCurrency(total, code),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: oc.text,
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          formatCurrency(total, code),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: oc.text,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ));
+              );
             },
           ),
         ),
       ],
+    );
+  }
+
+  /// A few sentences about where the money is going.
+  ///
+  /// The app was collecting budgets, categories, recurring rules and 30-day
+  /// projections and never saying a word about any of it — charts show data,
+  /// they don't tell you what happened. Every line here is arithmetic over
+  /// what's already stored, so each one traces to a figure the user can go
+  /// and check.
+  Widget? _insightsStrip(BuildContext context, AppStore store, String code) {
+    final oc = context.oc;
+    final settings = context.watch<SettingsStore>();
+    final insights = buildInsights(
+      store,
+      code,
+      monthlyBudget: settings.monthlyBudget,
+    );
+    if (insights.isEmpty) return null;
+    final shown = insights.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            'WHAT CHANGED',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2,
+              color: oc.muted,
+            ),
+          ),
+        ),
+        for (int i = 0; i < shown.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _insightCard(oc, shown[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _insightCard(ExpndColors oc, Insight insight) {
+    final tint = switch (insight.tone) {
+      InsightTone.good => ExpndColors.green,
+      InsightTone.warn => ExpndColors.red,
+      InsightTone.neutral => oc.accent,
+    };
+    return NeoPopElevated(
+      faceColor: oc.surface,
+      depthColor: oc.edge,
+      borderColor: tint.withValues(alpha: 0.35),
+      depth: 3,
+      cornerRadius: 6,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: tint.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(sfIcon(insight.icon), size: 14, color: tint),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    insight.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: oc.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    insight.detail,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: oc.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1202,13 +1992,17 @@ class _DashboardViewState extends State<_DashboardView> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: Row(
               children: [
-                Text(
-                  'TRANSACTIONS',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted,
+                Flexible(
+                  child: Text(
+                    'TRANSACTIONS',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: oc.muted,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1273,11 +2067,19 @@ class _DashboardViewState extends State<_DashboardView> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Row(
               children: [
-                _filterTab(context, 'ALL', null),
+                Expanded(child: _filterTab(context, 'ALL', null)),
                 const SizedBox(width: 8),
-                _filterTab(context, 'INCOME', TransactionType.income),
+                Expanded(
+                  child: _filterTab(context, 'INCOME', TransactionType.income),
+                ),
                 const SizedBox(width: 8),
-                _filterTab(context, 'EXPENSE', TransactionType.expense),
+                Expanded(
+                  child: _filterTab(
+                    context,
+                    'EXPENSE',
+                    TransactionType.expense,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1329,7 +2131,8 @@ class _DashboardViewState extends State<_DashboardView> {
                       child: TransactionRow(
                         transaction: filtered[i],
                         currencyCode: code,
-                        onTap: () => showTransactionDetail(context, filtered[i]),
+                        onTap: () =>
+                            showTransactionDetail(context, filtered[i]),
                       ),
                     ),
                     if (i != filtered.length - 1)
@@ -1476,6 +2279,8 @@ class TransactionRow extends StatelessWidget {
                     isTransfer
                         ? 'Transfer → ${toAccount?.name ?? "account"}'
                         : (custom?.name ?? transaction.category.raw),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -1494,9 +2299,18 @@ class TransactionRow extends StatelessWidget {
                   const SizedBox(height: 3),
                   Row(
                     children: [
-                      Text(
-                        _dateLabel(transaction.date),
-                        style: TextStyle(fontSize: 11, color: oc.dimmed),
+                      // Both flexible so the row can never overflow, but the
+                      // date is biased to win (flex 3 vs 2): a long account name
+                      // ellipsizes first, and the short date stays whole. The
+                      // old 50/50 (both plain Flexible) clipped the date too.
+                      Flexible(
+                        flex: 3,
+                        child: Text(
+                          _dateLabel(transaction.date),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: oc.dimmed),
+                        ),
                       ),
                       if (transaction.isRecurring) ...[
                         const SizedBox(width: 6),
@@ -1513,9 +2327,14 @@ class TransactionRow extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 3),
-                        Text(
-                          account.name,
-                          style: TextStyle(fontSize: 10, color: oc.dimmed),
+                        Flexible(
+                          flex: 2,
+                          child: Text(
+                            account.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 10, color: oc.dimmed),
+                          ),
                         ),
                       ],
                     ],
@@ -1538,40 +2357,48 @@ class TransactionRow extends StatelessWidget {
                   ),
                 ),
               ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isTransfer
-                      ? formatCurrency(transaction.amount, currencyCode)
-                      : '${isIncome ? "+" : "-"}${formatCurrency(transaction.amount, currencyCode)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: isTransfer
-                        ? ExpndColors.gold
-                        : isIncome
-                        ? ExpndColors.green
-                        : ExpndColors.red,
-                  ),
+            // Scale a very large amount down to fit rather than overflow the row
+            // on a narrow phone at a bumped-up text size.
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isTransfer
+                          ? formatCurrency(transaction.amount, currencyCode)
+                          : '${isIncome ? "+" : "-"}${formatCurrency(transaction.amount, currencyCode)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                        color: isTransfer
+                            ? ExpndColors.gold
+                            : isIncome
+                            ? ExpndColors.green
+                            : ExpndColors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    // Direction arrow, mirroring the neoPOP transaction cell.
+                    Icon(
+                      isTransfer
+                          ? sfIcon('arrow.left.arrow.right')
+                          : isIncome
+                          ? Icons.south_west_rounded
+                          : Icons.north_east_rounded,
+                      size: 15,
+                      color: isTransfer
+                          ? ExpndColors.gold
+                          : isIncome
+                          ? ExpndColors.green
+                          : ExpndColors.red,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 3),
-                // Direction arrow, mirroring the neoPOP transaction cell.
-                Icon(
-                  isTransfer
-                      ? sfIcon('arrow.left.arrow.right')
-                      : isIncome
-                      ? Icons.south_west_rounded
-                      : Icons.north_east_rounded,
-                  size: 15,
-                  color: isTransfer
-                      ? ExpndColors.gold
-                      : isIncome
-                      ? ExpndColors.green
-                      : ExpndColors.red,
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -1594,6 +2421,10 @@ class TransactionRow extends StatelessWidget {
       'Nov',
       'Dec',
     ];
-    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+    // Drop the year for the current year — in a "recent" list it's redundant,
+    // and it clears space so the date never clips to "Jul 25, 20…" in a row
+    // that also carries an amount and an account name.
+    final label = '${months[d.month - 1]} ${d.day}';
+    return d.year == DateTime.now().year ? label : '$label, ${d.year}';
   }
 }

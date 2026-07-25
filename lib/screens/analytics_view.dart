@@ -9,6 +9,8 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
+import '../widgets/app_header.dart';
+import 'settings_view.dart';
 import '../widgets/neopop.dart';
 
 enum _Period { m1, m3, m6, y1, all }
@@ -82,12 +84,21 @@ class _AnalyticsViewState extends State<AnalyticsView> {
       color: oc.bg,
       child: Column(
         children: [
-          _titleBar(oc),
+          const ExpndHeader(
+            icon: 'chart.bar.xaxis',
+            title: 'ANALYTICS',
+            actions: [SettingsAvatarAction()],
+          ),
           Expanded(
             child: store.transactions.isEmpty
                 ? _emptyState(oc)
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      16,
+                      16,
+                      ExpndSpacing.scrollBottomUnderTabBar(context),
+                    ),
                     children: [
                       _slot(0, _periodSelector(oc)),
                       _slot(
@@ -148,40 +159,6 @@ class _AnalyticsViewState extends State<AnalyticsView> {
               padding: const EdgeInsets.only(bottom: 20),
               child: FadeSlideIn(index: index, child: child),
             ),
-    );
-  }
-
-  Widget _titleBar(ExpndColors oc) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: ExpndColors.gold,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(
-              sfIcon('chart.bar.xaxis'),
-              size: 12,
-              color: ExpndColors.ink,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'ANALYTICS',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              color: oc.text,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -384,13 +361,17 @@ class _AnalyticsViewState extends State<AnalyticsView> {
               children: [
                 Icon(sfIcon(icon), size: 12, color: oc.accent),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted,
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: oc.muted,
+                    ),
                   ),
                 ),
               ],
@@ -466,16 +447,24 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                   color: oc.accent,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'BALANCE TREND',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted,
+                // Expanded (not Flexible + Spacer): two flex:1 children split
+                // the free space evenly, capping the title at half the row and
+                // ellipsizing it even when the value is short. Expanded lets the
+                // title take all the room the value leaves.
+                Expanded(
+                  child: Text(
+                    'NET CASH FLOW',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: oc.muted,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   formatCurrency(running, code),
                   style: TextStyle(
@@ -532,6 +521,45 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                     ),
                   ),
                   borderData: FlBorderData(show: false),
+                  // Without this fl_chart falls back to its own tooltip, which
+                  // prints the raw double — a balance came out as
+                  // "-770.8900000000001". Money is never a bare toString().
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipColor: (_) => oc.surface,
+                      tooltipBorderRadius: BorderRadius.circular(6),
+                      tooltipPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      getTooltipItems: (spots) => [
+                        for (final s in spots)
+                          LineTooltipItem(
+                            formatCurrency(s.y, code),
+                            TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: s.y < 0 ? ExpndColors.red : oc.text,
+                            ),
+                          ),
+                      ],
+                    ),
+                    getTouchedSpotIndicator: (bar, indexes) => [
+                      for (final _ in indexes)
+                        TouchedSpotIndicatorData(
+                          FlLine(color: oc.border, strokeWidth: 1),
+                          FlDotData(
+                            getDotPainter: (spot, _, _, _) =>
+                                FlDotCirclePainter(
+                                  radius: 4,
+                                  color: lineColor,
+                                  strokeWidth: 2,
+                                  strokeColor: oc.surface,
+                                ),
+                          ),
+                        ),
+                    ],
+                  ),
                   lineBarsData: [
                     LineChartBarData(
                       spots: spots,
@@ -663,6 +691,24 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                 maxY: maxY,
                 minY: 0,
                 alignment: BarChartAlignment.spaceAround,
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => oc.surface,
+                    tooltipBorderRadius: BorderRadius.circular(6),
+                    tooltipPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    getTooltipItem: (group, _, rod, _) => BarTooltipItem(
+                      formatCurrency(rod.toY, code),
+                      TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: rod.color ?? oc.text,
+                      ),
+                    ),
+                  ),
+                ),
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,

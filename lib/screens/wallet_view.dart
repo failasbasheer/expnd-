@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
@@ -8,10 +9,16 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
+import '../widgets/app_header.dart';
 import '../widgets/neopop.dart';
 import 'account_setup.dart';
+import 'settings_view.dart';
 import 'emi.dart';
 import 'home_shell.dart';
+
+/// Identifies the sticky selected-account bar so tests can assert on it without
+/// guessing at an icon or a label that might legitimately change.
+const Key walletStickyBarKey = ValueKey('wallet-sticky-account-bar');
 
 class WalletView extends StatefulWidget {
   /// When set (e.g. after tapping an account card on the dashboard), the wallet
@@ -27,6 +34,52 @@ class WalletView extends StatefulWidget {
 
 class _WalletViewState extends State<WalletView> {
   int _selected = 0;
+
+  final ScrollController _scroll = ScrollController();
+  final GlobalKey _deckKey = GlobalKey();
+
+  /// True once the card deck has scrolled out of view. The details below belong
+  /// to whichever card is at the front, so with the deck gone there's nothing
+  /// left on screen saying which account you're reading — hence the sticky bar.
+  ///
+  /// A [ValueNotifier] rather than setState so a scroll only rebuilds the bar,
+  /// not the whole wallet (the card deck is expensive to lay out).
+  final ValueNotifier<bool> _deckOffscreen = ValueNotifier(false);
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_syncDeckVisibility);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_syncDeckVisibility);
+    _scroll.dispose();
+    _deckOffscreen.dispose();
+    super.dispose();
+  }
+
+  void _syncDeckVisibility() {
+    final deck = _deckKey.currentContext?.findRenderObject() as RenderBox?;
+    if (deck == null || !deck.attached || !deck.hasSize) return;
+    if (!_scroll.hasClients) return;
+
+    // getOffsetToReveal(_, 0) is the scroll offset at which the deck's top sits
+    // at the viewport's top; add its height and the deck has just cleared.
+    // Asking the viewport directly beats measuring against a key on the
+    // ListView — that resolves to a render object *inside* the scrolled
+    // content, so the offset it reports never changes as you scroll.
+    final viewport = RenderAbstractViewport.maybeOf(deck);
+    if (viewport == null) return;
+    final clearedAt =
+        viewport.getOffsetToReveal(deck, 0).offset + deck.size.height;
+
+    // Flip just before it fully clears, so the bar arrives while a sliver of
+    // card is still visible instead of after a blank beat.
+    final show = _scroll.offset > clearedAt - 24;
+    if (_deckOffscreen.value != show) _deckOffscreen.value = show;
+  }
 
   @override
   void didUpdateWidget(covariant WalletView old) {
@@ -44,8 +97,6 @@ class _WalletViewState extends State<WalletView> {
       if (!mounted) return;
       final accounts = context.read<AppStore>().accounts;
       final idx = accounts.indexWhere((a) => a.id == id);
-      debugPrint('[wallet-focus] applyFocus id=$id -> idx=$idx '
-          '(accounts=${accounts.map((a) => "${a.name}:${a.id}").toList()})');
       if (idx >= 0) setState(() => _selected = idx);
       widget.onFocusConsumed?.call();
     });
@@ -65,12 +116,20 @@ class _WalletViewState extends State<WalletView> {
       color: oc.bg,
       child: Column(
         children: [
-          _titleBar(oc, accounts.isNotEmpty),
+          _titleBar(accounts),
+          if (accounts.isNotEmpty)
+            _selectedAccountBar(oc, store, accounts, code),
           Expanded(
             child: accounts.isEmpty
                 ? _emptyState(oc)
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 110),
+                    controller: _scroll,
+                    padding: EdgeInsets.fromLTRB(
+                      0,
+                      0,
+                      0,
+                      ExpndSpacing.scrollBottomUnderTabBar(context),
+                    ),
                     children: [
                       FadeSlideIn(
                         index: 0,
@@ -79,9 +138,16 @@ class _WalletViewState extends State<WalletView> {
                       const SizedBox(height: 20),
                       FadeSlideIn(
                         index: 1,
-                        child: _cardStack(store, accounts, code),
+                        child: KeyedSubtree(
+                          key: _deckKey,
+                          child: _cardStack(store, accounts, code),
+                        ),
                       ),
                       const SizedBox(height: 20),
+                      if (accounts.length >= 2) ...[
+                        _reorderHint(oc),
+                        const SizedBox(height: 8),
+                      ],
                       if (_selected < accounts.length)
                         // Switching cards swaps these details (credit cards add
                         // an EMI section) — animate the height so the section
@@ -108,55 +174,192 @@ class _WalletViewState extends State<WalletView> {
     );
   }
 
-  Widget _titleBar(ExpndColors oc, bool showAdd) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          Text(
-            'MY WALLET',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              color: oc.text,
-            ),
-          ),
-          const Spacer(),
-          if (showAdd)
-            NeoPopButton(
-              onPressed: () {
-                Haptics.light();
-                showAddAccount(context);
-              },
-              depth: 3,
-              cornerRadius: 4,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(sfIcon('plus'), size: 10, color: ExpndColors.ink),
-                    const SizedBox(width: 5),
-                    Text(
-                      'ADD',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        color: ExpndColors.ink,
-                      ),
+  /// Sticky identity bar for the card at the front of the deck. Slides in only
+  /// once the deck has scrolled away, so it never duplicates what's already on
+  /// screen. Tapping it scrolls back up to the deck.
+  Widget _selectedAccountBar(
+    ExpndColors oc,
+    AppStore store,
+    List<Account> accounts,
+    String code,
+  ) {
+    if (_selected >= accounts.length) return const SizedBox.shrink();
+    final account = accounts[_selected];
+    final tint = hexColor(account.colorHex);
+    final isCredit = account.type == AccountType.credit;
+    // Mirrors the card face: a credit card leads with what's owed, everything
+    // else with what it holds.
+    final amount = isCredit
+        ? store.creditUsedFor(account)
+        : store.balanceFor(account);
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _deckOffscreen,
+      builder: (context, show, _) => AnimatedSize(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: !show
+            ? const SizedBox(width: double.infinity)
+            : GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  Haptics.light();
+                  _scroll.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                child: Container(
+                  key: walletStickyBarKey,
+                  decoration: BoxDecoration(
+                    color: oc.surface,
+                    border: Border(
+                      bottom: BorderSide(color: oc.border, width: 1),
                     ),
-                  ],
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: tint.withValues(alpha: 0.16),
+                          border: Border.all(
+                            color: tint.withValues(alpha: 0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          sfIcon(account.type.icon),
+                          size: 12,
+                          color: tint,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              account.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: oc.text,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              isCredit
+                                  ? 'Credit Card · used'
+                                  : account.type.raw,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: oc.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        formatCurrency(amount, code),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.2,
+                          color: amount < 0 ? ExpndColors.red : oc.text,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(sfIcon('chevron.up'), size: 12, color: oc.dimmed),
+                    ],
+                  ),
                 ),
               ),
+      ),
+    );
+  }
+
+  Widget _titleBar(List<Account> accounts) {
+    return ExpndHeader(
+      icon: 'creditcard.fill',
+      title: 'MY WALLET',
+      actions: [
+        // Was a labelled "+ ADD" pill — squat, a different height to every
+        // other control on screen, and carrying a word the plus already says.
+        // As a square primary action it lines up with the header furniture on
+        // the other tabs. The empty wallet keeps its own full-width CTA, so
+        // there's nothing to add *to* until an account exists.
+        if (accounts.isNotEmpty)
+          HeaderAction(
+            icon: 'plus',
+            semanticLabel: 'Add account',
+            primary: true,
+            onPressed: () {
+              Haptics.light();
+              showAddAccount(context);
+            },
+          ),
+        const SettingsAvatarAction(),
+      ],
+    );
+  }
+
+  Widget _reorderHint(ExpndColors oc) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(sfIcon('arrow.up.arrow.down'), size: 10, color: oc.dimmed),
+          const SizedBox(width: 6),
+          // Flexible so the hint ellipsises rather than overflowing on the
+          // narrowest phones at a bumped-up text size.
+          Flexible(
+            child: Text(
+              'Long-press a card to rearrange',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: oc.dimmed),
             ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openReorderAccounts(List<Account> accounts) async {
+    Haptics.light();
+    final store = context.read<AppStore>();
+    final selectedId = _selected < accounts.length
+        ? accounts[_selected].id
+        : null;
+    final newOrder = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReorderAccountsSheet(accounts: accounts),
+    );
+    if (newOrder == null) return;
+    store.reorderAccounts(newOrder);
+    // Keep the same card at the front after the shuffle.
+    if (selectedId != null) {
+      final idx = newOrder.indexOf(selectedId);
+      if (idx >= 0) setState(() => _selected = idx);
+    }
+    Haptics.success();
   }
 
   Widget _emptyState(ExpndColors oc) {
@@ -365,6 +568,11 @@ class _WalletViewState extends State<WalletView> {
                       Haptics.light();
                       setState(() => _selected = idx);
                     },
+                    // Long-press any card to rearrange the deck — matches the
+                    // long-press-to-manage gesture used for categories and tags.
+                    onLongPress: accounts.length >= 2
+                        ? () => _openReorderAccounts(accounts)
+                        : null,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 480),
                       curve: Curves.easeOut,
@@ -397,15 +605,17 @@ class _WalletViewState extends State<WalletView> {
                               colorHex: accounts[order[pos]].colorHex,
                               cardDigits: accounts[order[pos]].cardDigits,
                               creditLimit: accounts[order[pos]].creditLimit,
-                              creditUsed:
-                                  store.creditUsedFor(accounts[order[pos]]),
+                              creditUsed: store.creditUsedFor(
+                                accounts[order[pos]],
+                              ),
                             ),
                             if (!isFront)
                               Positioned.fill(
                                 child: IgnorePointer(
                                   child: ColoredBox(
-                                    color: Colors.black
-                                        .withValues(alpha: 1 - opacity),
+                                    color: Colors.black.withValues(
+                                      alpha: 1 - opacity,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -433,10 +643,8 @@ class _WalletViewState extends State<WalletView> {
       child: Column(
         children: [
           _balanceCard(oc, store, account, code),
-          if (account.type == AccountType.credit) ...[
-            const SizedBox(height: 16),
-            CreditEmiSection(account: account),
-          ],
+          const SizedBox(height: 16),
+          AccountLoansSection(account: account),
           const SizedBox(height: 16),
           _accountTransactions(oc, store, account),
         ],
@@ -511,42 +719,50 @@ class _WalletViewState extends State<WalletView> {
             const SizedBox(height: 16),
             Row(
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'NET FROM TRANSACTIONS',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                        color: oc.muted,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'NET FROM TRANSACTIONS',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: oc.muted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          sfIcon(positive ? 'arrow.up' : 'arrow.down'),
-                          size: 11,
-                          color: positive ? ExpndColors.green : ExpndColors.red,
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          children: [
+                            Icon(
+                              sfIcon(positive ? 'arrow.up' : 'arrow.down'),
+                              size: 11,
+                              color: positive
+                                  ? ExpndColors.green
+                                  : ExpndColors.red,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              formatCurrency(netChange.abs(), code),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                                color: positive
+                                    ? ExpndColors.green
+                                    : ExpndColors.red,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          formatCurrency(netChange.abs(), code),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: positive
-                                ? ExpndColors.green
-                                : ExpndColors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12),
                 Container(
                   width: 1,
                   height: 36,
@@ -581,31 +797,31 @@ class _WalletViewState extends State<WalletView> {
             const SizedBox(height: 16),
             Container(height: 1, color: oc.border),
             const SizedBox(height: 12),
+            // A low-emphasis destructive link, not a full-width bordered
+            // button: removing an account is rare and irreversible, so it
+            // shouldn't carry the same visual weight as everyday actions. The
+            // confirm dialog (below) still guards the actual delete. Red is
+            // reserved to the muted glyph/label here and saved for the confirm.
             GestureDetector(
               onTap: () => _confirmDelete(context, store, account),
-              child: Container(
-                width: double.infinity,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: ExpndColors.red.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: ExpndColors.red.withValues(alpha: 0.2),
-                    width: 1.5,
-                  ),
-                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(sfIcon('trash'), size: 11, color: ExpndColors.red),
+                    Icon(
+                      sfIcon('trash'),
+                      size: 11,
+                      color: ExpndColors.red.withValues(alpha: 0.75),
+                    ),
                     const SizedBox(width: 6),
                     Text(
-                      'REMOVE ACCOUNT',
+                      'Remove account',
                       style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                        color: ExpndColors.red,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: ExpndColors.red.withValues(alpha: 0.75),
                       ),
                     ),
                   ],
@@ -691,16 +907,22 @@ class _WalletViewState extends State<WalletView> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: Row(
               children: [
-                Text(
-                  'RECENT TRANSACTIONS',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted,
+                // Expanded, not Flexible + Spacer — the latter caps the title at
+                // half the row and clips it even with a short trailing value.
+                Expanded(
+                  child: Text(
+                    'RECENT TRANSACTIONS',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: oc.muted,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 if (all.isNotEmpty)
                   Text(
                     '${all.length} total',
@@ -746,6 +968,180 @@ class _WalletViewState extends State<WalletView> {
                   child: Container(height: 1, color: oc.border),
                 ),
             ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reorder accounts sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Drag-to-arrange the wallet's account cards. Returns the account ids in their
+/// new order (or null on dismiss). The order is stored on [AppStore] so it
+/// holds everywhere accounts are listed, not just the card deck.
+class _ReorderAccountsSheet extends StatefulWidget {
+  final List<Account> accounts;
+  const _ReorderAccountsSheet({required this.accounts});
+
+  @override
+  State<_ReorderAccountsSheet> createState() => _ReorderAccountsSheetState();
+}
+
+class _ReorderAccountsSheetState extends State<_ReorderAccountsSheet> {
+  late final List<Account> _items = List.of(widget.accounts);
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: oc.bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: oc.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'ARRANGE ACCOUNTS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              color: oc.text,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Drag to set your card order',
+            style: TextStyle(fontSize: 11, color: oc.muted),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: _items.length,
+              onReorderItem: (oldIndex, newIndex) {
+                Haptics.light();
+                setState(() {
+                  final it = _items.removeAt(oldIndex);
+                  _items.insert(newIndex, it);
+                });
+              },
+              itemBuilder: (context, i) => _row(oc, _items[i], i),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: NeoPopButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(_items.map((e) => e.id).toList()),
+                depth: 4,
+                cornerRadius: 6,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          sfIcon('checkmark.circle.fill'),
+                          size: 14,
+                          color: ExpndColors.ink,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'SAVE ORDER',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                            color: ExpndColors.ink,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(ExpndColors oc, Account acc, int index) {
+    final tint = hexColor(acc.colorHex);
+    return Container(
+      key: ValueKey(acc.id),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: oc.border, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: tint.withValues(alpha: 0.5), width: 1),
+            ),
+            child: Icon(sfIcon(acc.type.icon), size: 14, color: tint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  acc.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: oc.text,
+                  ),
+                ),
+                Text(
+                  acc.type.raw,
+                  style: TextStyle(fontSize: 10, color: oc.muted),
+                ),
+              ],
+            ),
+          ),
+          ReorderableDragStartListener(
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Icon(
+                sfIcon('line.horizontal.3'),
+                size: 16,
+                color: oc.dimmed,
+              ),
+            ),
+          ),
         ],
       ),
     );
