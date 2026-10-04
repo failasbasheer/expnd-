@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/apple_intelligence.dart';
 import '../services/insights.dart';
 import '../services/upcoming.dart';
 import '../store/app_store.dart';
@@ -13,12 +12,12 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
-import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/neopop.dart';
 import '../widgets/neopop_cards.dart';
 import '../widgets/privacy_eye.dart';
 import 'add_transaction.dart';
+import 'capture_inbox_view.dart';
 import 'transaction_detail.dart';
 import 'analytics_view.dart';
 import 'wallet_view.dart';
@@ -294,170 +293,197 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    final light = Theme.of(context).brightness == Brightness.light;
-    // A translucent plate rather than a full glassmorphic restyle: the bar
-    // keeps its square corners and hard 2px top edge, and only the fill
-    // becomes a material that scrolled content blurs through. The FAB stays
-    // solid — a see-through primary action reads as broken.
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        // Positioned.fill matches the bar's laid-out size exactly, and
-        // ClipRect keeps the blur from bleeding past it. The FAB lives in the
-        // content layer above this one, so it is never clipped and can still
-        // sit proud of the bar.
-        Positioned.fill(
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: ColoredBox(
-                // Light mode blurs near-white content under a near-white
-                // surface, so the plate has to stay thin enough for the warmer
-                // page bg and any colour underneath to tint through — opaque
-                // white would read as flat paint, not glass.
-                color: oc.surface.withValues(alpha: light ? 0.62 : 0.60),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: oc.surface,
+        border: Border(top: BorderSide(color: oc.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              _tabButton(
+                context,
+                Icons.home_outlined,
+                'Home',
+                ExpndTab.dashboard,
               ),
-            ),
-          ),
-        ),
-        SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 64,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: Container(height: 2, color: oc.edge),
-                ),
-                Row(
-                  children: [
-                    _tabButton(
-                      context,
-                      'house.fill',
-                      'HOME',
-                      ExpndTab.dashboard,
-                    ),
-                    _tabButton(
-                      context,
-                      'chart.bar.xaxis',
-                      'ANALYTICS',
-                      ExpndTab.analytics,
-                    ),
-                    // Gap slot that holds the FAB, so it always sits centered in
-                    // the space between the two tab groups instead of overlapping
-                    // the WALLET tab.
-                    Expanded(
-                      child: Center(
-                        child: Transform.translate(
-                          offset: const Offset(0, -14),
-                          child: Semantics(
-                            button: true,
-                            label: 'Add transaction',
-                            child: NeoPopButton(
-                              onPressed: onAdd,
-                              faceColor: ExpndColors.gold,
-                              depthColor: ExpndColors.goldDark,
-                              // On the near-white light tab bar the gold face
-                              // loses its edge; add an ink hairline in light mode
-                              // only so the FAB stays the clear primary action.
-                              borderColor:
-                                  Theme.of(context).brightness ==
-                                      Brightness.light
-                                  ? ExpndColors.ink.withValues(alpha: 0.85)
-                                  : null,
-                              depth: 4,
-                              cornerRadius: 30,
-                              child: SizedBox(
-                                width: 56,
-                                height: 56,
-                                child: Icon(
-                                  sfIcon('plus'),
-                                  size: 24,
-                                  color: ExpndColors.ink,
-                                ),
+              _tabButton(
+                context,
+                Icons.bar_chart_rounded,
+                'Analytics',
+                ExpndTab.analytics,
+              ),
+              Expanded(
+                child: Tooltip(
+                  message: 'Add transaction',
+                  child: Semantics(
+                    button: true,
+                    label: 'Add transaction',
+                    onTap: onAdd,
+                    excludeSemantics: true,
+                    child: _TabPress(
+                      onTap: () {
+                        Haptics.medium();
+                        onAdd();
+                      },
+                      child: SizedBox(
+                        height: 62,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: oc.accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.add_rounded,
+                                size: 25,
+                                color: oc.accent,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Add',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: oc.muted,
+                              ),
+                              textScaler: TextScaler.linear(
+                                MediaQuery.textScalerOf(
+                                  context,
+                                ).scale(1).clamp(1.0, 1.2),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    _tabButton(
-                      context,
-                      'creditcard.fill',
-                      'WALLET',
-                      ExpndTab.wallet,
-                    ),
-                    _tabButton(context, 'target', 'PLAN', ExpndTab.plan),
-                  ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+              _tabButton(
+                context,
+                Icons.account_balance_wallet_outlined,
+                'Wallet',
+                ExpndTab.wallet,
+              ),
+              _tabButton(
+                context,
+                Icons.pie_chart_outline_rounded,
+                'Plan',
+                ExpndTab.plan,
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _tabButton(
     BuildContext context,
-    String icon,
+    IconData icon,
     String label,
     ExpndTab tab,
   ) {
     final active = selected == tab;
-    // Inactive uses `muted` (#8A8A8A, ~AA on the bar), not `dimmed` (#5A5A5A,
-    // ~3:1) — the label is small, so it needs the extra contrast to stay legible.
-    final color = active ? context.oc.accent : context.oc.muted;
+    final oc = context.oc;
     return Expanded(
       child: Semantics(
         button: true,
         selected: active,
         label: '$label tab',
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        onTap: () => onSelect(tab),
+        excludeSemantics: true,
+        child: _TabPress(
           onTap: () {
             Haptics.light();
             onSelect(tab);
           },
           child: SizedBox(
-            height: 64,
+            height: 62,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                AnimatedScale(
-                  scale: active ? 1.12 : 1,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: Icon(sfIcon(icon), size: 19, color: color),
-                ),
-                const SizedBox(height: 4),
-                // Tab labels are chrome inside a fixed-height (64pt) bar, so
-                // they don't scale with Dynamic Type — otherwise a large system
-                // text size overflows the bar. 10pt reads clearly on its own.
-                MediaQuery.withNoTextScaling(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.6,
-                      color: color,
-                    ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  width: 48,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active ? oc.card : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 24,
+                    color: active ? oc.accent : oc.muted,
                   ),
                 ),
                 const SizedBox(height: 3),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 240),
-                  curve: Curves.easeOut,
-                  width: active ? 16 : 0,
-                  height: 2,
-                  color: active ? context.oc.accent : Colors.transparent,
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textScaler: TextScaler.linear(
+                    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.2),
+                  ),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active ? oc.text : oc.muted,
+                  ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS-style tab press: the item dips slightly while held instead of the
+/// Material ink highlight, which painted a grey slab over the whole cell.
+class _TabPress extends StatefulWidget {
+  final VoidCallback onTap;
+  final Widget child;
+  const _TabPress({required this.onTap, required this.child});
+
+  @override
+  State<_TabPress> createState() => _TabPressState();
+}
+
+class _TabPressState extends State<_TabPress> {
+  bool _down = false;
+
+  void _set(bool value) {
+    if (_down != value) setState(() => _down = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _set(true),
+      onTapCancel: () => _set(false),
+      onTapUp: (_) => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.92 : 1,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: AnimatedOpacity(
+          opacity: _down ? 0.7 : 1,
+          duration: const Duration(milliseconds: 110),
+          child: widget.child,
         ),
       ),
     );
@@ -491,7 +517,7 @@ class _ToastBanner extends StatelessWidget {
       faceColor: isIncome ? ExpndColors.gold : oc.surface,
       depthColor: isIncome ? ExpndColors.goldDark : oc.edge,
       borderColor: isIncome ? ExpndColors.goldDark : oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -522,7 +548,7 @@ class _ToastBanner extends StatelessWidget {
                   'Transaction Added',
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: isIncome ? ExpndColors.ink : oc.text,
                   ),
                 ),
@@ -569,7 +595,7 @@ class _ToastBanner extends StatelessWidget {
       faceColor: oc.surface,
       depthColor: ExpndColors.red,
       borderColor: ExpndColors.red,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -599,7 +625,7 @@ class _ToastBanner extends StatelessWidget {
                     'Over ${transaction.category.raw} Budget',
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: oc.text,
                     ),
                   ),
@@ -626,6 +652,79 @@ class _ToastBanner extends StatelessWidget {
 /// Tells the user that recurring transactions posted themselves on launch.
 /// Without this the balance simply changes between sessions with no account of
 /// why. Tapping opens Upcoming, so the next ones are no longer a surprise.
+/// Dashboard prompt for amounts captured from a widget or Siri that haven't
+/// been categorised yet. Deliberately understated: these are already logged
+/// and safe, they just aren't in the balances until the user says what they
+/// were.
+class _CaptureInboxBanner extends StatelessWidget {
+  final int count;
+  const _CaptureInboxBanner({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Haptics.light();
+        showCaptureInbox(context);
+      },
+      child: NeoPopElevated(
+        faceColor: oc.surface,
+        depthColor: oc.edge,
+        borderColor: oc.border,
+        depth: 0,
+        cornerRadius: 6,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ExpndColors.gold.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(sfIcon('tray'), size: 16, color: oc.accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$count quick ${count == 1 ? "capture" : "captures"} '
+                      'to file',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: oc.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Not in your balances yet — tap to categorise',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: oc.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(sfIcon('chevron.right'), size: 13, color: oc.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RecurringToast extends StatelessWidget {
   final List<Transaction> posted;
   final VoidCallback onTap;
@@ -662,7 +761,7 @@ class _RecurringToast extends StatelessWidget {
         faceColor: oc.surface,
         depthColor: oc.edge,
         borderColor: oc.border,
-        depth: 4,
+        depth: 0,
         cornerRadius: 6,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -690,7 +789,7 @@ class _RecurringToast extends StatelessWidget {
                       'posted',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         color: oc.text,
                       ),
                     ),
@@ -713,151 +812,6 @@ class _RecurringToast extends StatelessWidget {
               Icon(sfIcon('chevron.right'), size: 14, color: oc.muted),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dashboard identity — the greeting, and the wordmark it hands back to
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Greets you once a day, then gets out of the way.
-///
-/// The first time the dashboard is built on a new calendar day it shows "GOOD
-/// MORNING / `name`"; a few seconds later that retires into the EXPND wordmark,
-/// and every later open the same day starts there. Deliberately not a
-/// permanent fixture: a greeting you see twenty times a day stops reading as
-/// one, and it would be the first thing in the way every time you tabbed home.
-///
-/// Both states stay mounted in a [Stack] so the row keeps a single height —
-/// the balance card below must not jump when the greeting hands over.
-class _GreetingIdentity extends StatefulWidget {
-  const _GreetingIdentity();
-
-  @override
-  State<_GreetingIdentity> createState() => _GreetingIdentityState();
-}
-
-class _GreetingIdentityState extends State<_GreetingIdentity> {
-  /// Long enough to read a name, short enough that it's gone before you've
-  /// finished taking in the balance.
-  static const _hold = Duration(milliseconds: 4000);
-  static const _handover = Duration(milliseconds: 450);
-
-  bool _greeting = false;
-  Timer? _timer;
-
-  static int _dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
-
-  @override
-  void initState() {
-    super.initState();
-    final settings = context.read<SettingsStore>();
-    final today = _dayKey(DateTime.now());
-    if (settings.lastGreetedDay == today) return;
-
-    _greeting = true;
-    // Stamped after the frame, not here: the setter notifies listeners, and
-    // initState runs mid-build. Stamping on *show* rather than on hand-over
-    // means a relaunch two seconds later doesn't earn a second greeting.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<SettingsStore>().lastGreetedDay = today;
-    });
-    _timer = Timer(_hold, () {
-      if (mounted) setState(() => _greeting = false);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String get _salutation {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'GOOD MORNING';
-    if (h < 17) return 'GOOD AFTERNOON';
-    return 'GOOD EVENING';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final oc = context.oc;
-    final name = context.watch<SettingsStore>().userName.trim();
-    // 'Your Name' is the placeholder the setup screen ships with — greeting
-    // someone by it would be worse than not naming them at all.
-    final named = name.isNotEmpty && name != 'Your Name';
-
-    return Stack(
-      children: [
-        // Laid out whether or not it's visible, so the taller of the two fixes
-        // the row height for good.
-        _phase(
-          visible: _greeting,
-          rise: true,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _salutation,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: named ? 10 : 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: named ? oc.accent : oc.text,
-                ),
-              ),
-              if (named) ...[
-                const SizedBox(height: 3),
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.2,
-                    color: oc.text,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        _phase(
-          visible: !_greeting,
-          rise: false,
-          child: const HeaderTitle(icon: 'house.fill', title: 'EXPND'),
-        ),
-      ],
-    );
-  }
-
-  /// One of the two states, fading and sliding a little as it takes or gives
-  /// up the row. [rise] sends it upward on the way out (the greeting leaving);
-  /// the wordmark comes up from below to replace it.
-  Widget _phase({
-    required bool visible,
-    required bool rise,
-    required Widget child,
-  }) {
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: _handover,
-        curve: Curves.easeOut,
-        child: AnimatedSlide(
-          offset: visible ? Offset.zero : Offset(0, rise ? -0.35 : 0.35),
-          duration: _handover,
-          curve: Curves.easeOut,
-          child: ExcludeSemantics(excluding: !visible, child: child),
         ),
       ),
     );
@@ -888,6 +842,14 @@ class _DashboardView extends StatefulWidget {
 class _DashboardViewState extends State<_DashboardView> {
   DateTime _displayMonth = DateTime(DateTime.now().year, DateTime.now().month);
   TransactionType? _filter;
+
+  BoxDecoration _panelDecoration(ExpndColors oc, {Color? borderColor}) {
+    return BoxDecoration(
+      color: oc.surface,
+      borderRadius: BorderRadius.circular(ExpndRadius.card),
+      border: Border.all(color: borderColor ?? oc.border),
+    );
+  }
 
   bool _sameMonth(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month;
@@ -1017,6 +979,15 @@ class _DashboardViewState extends State<_DashboardView> {
                       : null,
                 ),
                 _slot(7, _transactionsCard(context, store, filtered, code)),
+                // Last, not first: captures are a small housekeeping chore,
+                // and putting them above the balance would make every widget
+                // tap feel like an error to be cleared.
+                _slot(
+                  8,
+                  _isCurrentMonth && store.pendingCaptures.isNotEmpty
+                      ? _CaptureInboxBanner(count: store.pendingCaptures.length)
+                      : null,
+                ),
               ],
             ),
           ),
@@ -1034,10 +1005,7 @@ class _DashboardViewState extends State<_DashboardView> {
       alignment: Alignment.topCenter,
       child: child == null
           ? const SizedBox(width: double.infinity)
-          : Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: FadeSlideIn(index: index, child: child),
-            ),
+          : Padding(padding: const EdgeInsets.only(bottom: 20), child: child),
     );
   }
 
@@ -1046,21 +1014,17 @@ class _DashboardViewState extends State<_DashboardView> {
     return d.year == n.year && d.month == n.month && d.day == n.day;
   }
 
-  // Dashboard header: identity row (greeting or wordmark) over the month strip.
+  // Page title and month navigation share the header system used by every tab.
   Widget _header(BuildContext context, int upcomingCount) {
     final oc = context.oc;
     return ExpndHeader(
-      leading: const _GreetingIdentity(),
+      icon: 'house',
+      title: 'Home',
       actions: [
-        HeaderAction.custom(
-          semanticLabel: 'Hide or show amounts',
-          // Lifted out of the gold balance card, where a piece of chrome had
-          // been wedged in beside the NET BALANCE label.
-          child: PrivacyEyeButton(
-            color: oc.muted,
-            size: 15,
-            padding: const EdgeInsets.all(10),
-          ),
+        PrivacyEyeButton(
+          color: oc.muted,
+          size: 22,
+          padding: const EdgeInsets.all(11),
         ),
         // No calendar button here: the Upcoming card in the body opens the
         // same screen from its "VIEW ALL" row, and does it with the count and
@@ -1082,122 +1046,44 @@ class _DashboardViewState extends State<_DashboardView> {
     );
   }
 
-  /// The month switcher, flattened.
-  ///
-  /// It used to be an elevated neoPOP block — the same visual weight as the
-  /// balance hero directly under it — with two 48pt [IconButton]s and a pair of
-  /// [Spacer]s around a 14pt label, so most of that bar was empty. Navigation
-  /// is chrome; it shouldn't compete with the figures for hierarchy. The old
-  /// "CURRENT MONTH" caption is gone too: it only ever appeared when the right
-  /// chevron was already disabled, which said the same thing twice. In its
-  /// place, a NOW tag that appears only when you're *off* the current month and
-  /// jumps you back in one tap instead of a run of chevron presses.
   Widget _monthStrip(BuildContext context) {
     final oc = context.oc;
-    return SizedBox(
-      height: 34,
-      child: Row(
-        children: [
-          _monthArrow(oc, 'chevron.left', () => _shiftMonth(-1)),
-          Expanded(
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      // Uppercased here rather than in _monthLabel: as a bare
-                      // row sitting under the EXPND wordmark it now reads as a
-                      // header label, and every other label at this level of
-                      // the design is caps.
-                      _monthLabel(_displayMonth).toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        color: oc.text,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_isCurrentMonth)
-                      Container(
-                        width: 5,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: oc.accent,
-                          shape: BoxShape.circle,
-                        ),
-                      )
-                    else
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          Haptics.light();
-                          final now = DateTime.now();
-                          setState(
-                            () => _displayMonth = DateTime(now.year, now.month),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ExpndColors.gold.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: ExpndColors.goldDark.withValues(
-                                alpha: 0.4,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            'NOW',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                              color: oc.accent,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            _monthLabel(_displayMonth),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: oc.muted,
             ),
           ),
-          _monthArrow(
-            oc,
-            'chevron.right',
-            _isCurrentMonth ? null : () => _shiftMonth(1),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _monthArrow(ExpndColors oc, String icon, VoidCallback? onTap) {
-    return Semantics(
-      button: true,
-      enabled: onTap != null,
-      label: icon == 'chevron.left' ? 'Previous month' : 'Next month',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 40,
-          height: 34,
-          child: Icon(
-            sfIcon(icon),
-            size: 15,
-            color: onTap == null ? oc.dimmed : oc.accent,
-          ),
         ),
-      ),
+        if (!_isCurrentMonth)
+          TextButton(
+            onPressed: () {
+              Haptics.light();
+              final now = DateTime.now();
+              setState(() => _displayMonth = DateTime(now.year, now.month));
+            },
+            child: const Text('Today'),
+          ),
+        IconButton(
+          tooltip: 'Previous month',
+          onPressed: () => _shiftMonth(-1),
+          icon: const Icon(Icons.chevron_left_rounded, size: 22),
+          color: oc.muted,
+        ),
+        IconButton(
+          tooltip: 'Next month',
+          onPressed: _isCurrentMonth ? null : () => _shiftMonth(1),
+          icon: const Icon(Icons.chevron_right_rounded, size: 22),
+          color: oc.muted,
+        ),
+      ],
     );
   }
 
@@ -1215,183 +1101,126 @@ class _DashboardViewState extends State<_DashboardView> {
     final edge = positive ? ExpndColors.goldDark : ExpndColors.redDark;
     final ink = ExpndColors.ink;
 
-    return SizedBox(
-      // Back to 200 now the privacy eye has moved up into the header: the label
-      // row is a bare line of text again, so the 14px this card was carrying
-      // for the eye's tap padding is dead space.
-      height: 200,
+    return Container(
+      height: 190,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: edge.withValues(alpha: 0.75)),
+      ),
       child: Stack(
         children: [
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 6, top: 6),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: edge,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
+          Positioned.fill(child: CardGuilloche(color: ink)),
           Padding(
-            padding: const EdgeInsets.only(right: 6, bottom: 6),
-            child: Container(
-              width: double.infinity,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: edge, width: 1.5),
-              ),
-              child: Stack(
-                children: [
-                  Positioned.fill(child: CardGuilloche(color: ink)),
-                  Positioned.fill(
-                    child: NeoPopShine(color: ink.withValues(alpha: 0.10)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    // Month-scoped flow (income − expense for the
-                                    // selected month), not money on hand — the
-                                    // wallet owns "NET WORTH". Naming it "…THIS
-                                    // MONTH" keeps the two from reading as rivals.
-                                    'NET THIS MONTH',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 2,
-                                      color: ink.withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.centerLeft,
-                                    child: TweenAnimationBuilder<double>(
-                                      tween: Tween(begin: 0, end: balance),
-                                      duration: const Duration(
-                                        milliseconds: 650,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      builder: (_, value, _) => Text(
-                                        formatCurrency(value, code),
-                                        style: TextStyle(
-                                          fontSize: 40,
-                                          fontWeight: FontWeight.w900,
-                                          color: ink,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                NeoPopTag(
-                                  text: positive ? 'POSITIVE' : 'NEGATIVE',
-                                  bg: ink,
-                                  fg: bg,
-                                ),
-                                // Only show a percentage when last month is a
-                                // meaningful base — comparing against a near-zero
-                                // prior month yields absurd figures (e.g. 5000%).
-                                // Below that floor, show a plain direction chip;
-                                // and cap the percentage so it never runs away.
-                                if (lastMonthNet != 0) ...[
-                                  const SizedBox(height: 6),
-                                  Builder(
-                                    builder: (_) {
-                                      final diff = balance - lastMonthNet;
-                                      final base = lastMonthNet.abs();
-                                      final meaningful =
-                                          base >= 1 &&
-                                          base >= balance.abs() * 0.1;
-                                      final arrow = diff >= 0 ? '▲' : '▼';
-                                      final label = meaningful
-                                          ? '$arrow ${((diff / lastMonthNet).abs() * 100).clamp(0, 999).round()}% vs last mo'
-                                          : '$arrow vs last mo';
-                                      return Text(
-                                        label,
-                                        style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          color: ink.withValues(alpha: 0.5),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Monthly net',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: ink.withValues(alpha: 0.62),
                         ),
-                        const Spacer(),
-                        Container(
-                          height: 1,
-                          margin: const EdgeInsets.only(bottom: 14),
-                          color: ink.withValues(alpha: 0.15),
-                        ),
-                        Row(
-                          children: [
-                            // Each stat scales down within its half rather than
-                            // pushing the row past its edge when the figures are
-                            // large or the text size is raised.
-                            Expanded(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: _balanceStat(
-                                  'INCOME',
-                                  income,
-                                  'arrow.up',
-                                  ink,
-                                  code,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (lastMonthNet != 0)
+                      Builder(
+                        builder: (_) {
+                          final diff = balance - lastMonthNet;
+                          final base = lastMonthNet.abs();
+                          final meaningful =
+                              base >= 1 && base >= balance.abs() * 0.1;
+                          final arrow = diff >= 0 ? '↑' : '↓';
+                          final label = meaningful
+                              ? '$arrow ${((diff / lastMonthNet).abs() * 100).clamp(0, 999).round()}% from last month'
+                              : '$arrow from last month';
+                          return Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                label,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: ink.withValues(alpha: 0.62),
                                 ),
                               ),
                             ),
-                            Container(
-                              width: 1,
-                              height: 36,
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              color: ink.withValues(alpha: 0.15),
-                            ),
-                            Expanded(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: _balanceStat(
-                                  'EXPENSES',
-                                  expenses,
-                                  'arrow.down',
-                                  ink,
-                                  code,
-                                ),
-                              ),
-                            ),
-                          ],
+                          );
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: balance),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, value, _) => Text(
+                          formatCurrency(value, code),
+                          style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -1.2,
+                            color: ink,
+                          ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+                Container(
+                  height: 1,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  color: ink.withValues(alpha: 0.16),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _balanceStat(
+                        'Income',
+                        income,
+                        'arrow.up',
+                        ink,
+                        code,
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 36,
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      color: ink.withValues(alpha: 0.16),
+                    ),
+                    Expanded(
+                      child: _balanceStat(
+                        'Spent',
+                        expenses,
+                        'arrow.down',
+                        ink,
+                        code,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -1411,29 +1240,35 @@ class _DashboardViewState extends State<_DashboardView> {
       children: [
         Icon(sfIcon(icon), size: 12, color: ink.withValues(alpha: 0.6)),
         const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-                color: ink.withValues(alpha: 0.5),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                  color: ink.withValues(alpha: 0.62),
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              formatCurrency(amount, code),
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: ink,
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  formatCurrency(amount, code),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: ink,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
@@ -1467,12 +1302,8 @@ class _DashboardViewState extends State<_DashboardView> {
             ),
           );
         },
-        child: NeoPopElevated(
-          faceColor: oc.surface,
-          depthColor: oc.edge,
-          borderColor: oc.border,
-          depth: 4,
-          cornerRadius: 6,
+        child: Container(
+          decoration: _panelDecoration(oc),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
@@ -1480,11 +1311,11 @@ class _DashboardViewState extends State<_DashboardView> {
                 Icon(sfIcon('sun.max.fill'), size: 13, color: oc.accent),
                 const SizedBox(width: 10),
                 Text(
-                  'TODAY',
+                  'Spent today',
                   style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
                     color: oc.muted,
                   ),
                 ),
@@ -1493,7 +1324,7 @@ class _DashboardViewState extends State<_DashboardView> {
                   '-${formatCurrency(todaySpent, code)}',
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: ExpndColors.red,
                   ),
                 ),
@@ -1532,12 +1363,8 @@ class _DashboardViewState extends State<_DashboardView> {
           Haptics.light();
           widget.onOpenPlan();
         },
-        child: NeoPopElevated(
-          faceColor: oc.surface,
-          depthColor: oc.edge,
-          borderColor: oc.border,
-          depth: 4,
-          cornerRadius: 6,
+        child: Container(
+          decoration: _panelDecoration(oc),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Column(
@@ -1551,13 +1378,13 @@ class _DashboardViewState extends State<_DashboardView> {
                     // widths/text sizes so the row never overflows.
                     Flexible(
                       child: Text(
-                        'MONTHLY BUDGET',
+                        'Monthly budget',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0,
                           color: oc.muted,
                         ),
                       ),
@@ -1615,8 +1442,8 @@ class _DashboardViewState extends State<_DashboardView> {
     );
   }
 
-  // A preview of what's coming: the committed total plus the three nearest
-  // movements, with the full timeline a tap away.
+  // A compact preview of what's coming: the committed total plus the nearest
+  // movement, with the full timeline a tap away.
   Widget _upcomingCard(
     BuildContext context,
     AppStore store,
@@ -1625,27 +1452,28 @@ class _DashboardViewState extends State<_DashboardView> {
   ) {
     final oc = context.oc;
     final summary = summarizeUpcoming(store, upcoming);
-    final preview = upcoming.take(3).toList();
+    final preview = upcoming.take(1).toList();
 
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 4,
-      cornerRadius: 6,
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: _panelDecoration(oc),
       child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Row(
               children: [
-                Text(
-                  'UPCOMING',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted,
+                Flexible(
+                  child: Text(
+                    'Upcoming',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
+                      color: oc.muted,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1665,19 +1493,24 @@ class _DashboardViewState extends State<_DashboardView> {
                     '${upcoming.length}',
                     style: TextStyle(
                       fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: oc.accent,
                     ),
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  '${kUpcomingHorizonDays}D',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
-                    color: oc.dimmed,
+                Flexible(
+                  child: Text(
+                    'Next $kUpcomingHorizonDays days',
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0,
+                      color: oc.dimmed,
+                    ),
                   ),
                 ),
               ],
@@ -1690,22 +1523,28 @@ class _DashboardViewState extends State<_DashboardView> {
               children: [
                 Expanded(
                   child: Text(
-                    'COMMITTED',
+                    'Committed',
                     style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0,
                       color: oc.muted,
                     ),
                   ),
                 ),
-                Text(
-                  formatCurrency(summary.committedOutflows, code),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.4,
-                    color: oc.text,
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      formatCurrency(summary.committedOutflows, code),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                        color: oc.text,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1734,12 +1573,12 @@ class _DashboardViewState extends State<_DashboardView> {
                 children: [
                   Text(
                     upcoming.length > preview.length
-                        ? 'VIEW ALL ${upcoming.length}'
-                        : 'VIEW ALL',
+                        ? 'View all ${upcoming.length}'
+                        : 'View all',
                     style: TextStyle(
                       fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
                       color: oc.accent,
                     ),
                   ),
@@ -1762,18 +1601,18 @@ class _DashboardViewState extends State<_DashboardView> {
         Row(
           children: [
             Text(
-              'ACCOUNTS',
+              'Accounts',
               style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
                 color: oc.muted,
               ),
             ),
             const Spacer(),
-            // The row scrolls horizontally; with two cards filling the width
-            // there's no hint more exist. A count + chevron says "swipe for the
-            // rest" so off-screen accounts aren't missed.
+            // Keep the dashboard preview to two complete cards. Partial cards
+            // looked like broken layout in dark mode; the count remains the
+            // affordance for opening the full Wallet list.
             if (store.accounts.length > 2) ...[
               Text(
                 '${store.accounts.length} accounts',
@@ -1786,10 +1625,10 @@ class _DashboardViewState extends State<_DashboardView> {
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 92,
+          height: 92 + (MediaQuery.textScalerOf(context).scale(40) - 40),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: store.accounts.length,
+            itemCount: store.accounts.length > 2 ? 2 : store.accounts.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
               final acc = store.accounts[i];
@@ -1801,12 +1640,11 @@ class _DashboardViewState extends State<_DashboardView> {
                   Haptics.light();
                   widget.onOpenAccount(acc.id);
                 },
-                child: NeoPopElevated(
-                  faceColor: oc.surface,
-                  depthColor: accColor.withValues(alpha: 0.5),
-                  borderColor: accColor.withValues(alpha: 0.4),
-                  depth: 3,
-                  cornerRadius: 6,
+                child: Container(
+                  decoration: _panelDecoration(
+                    oc,
+                    borderColor: accColor.withValues(alpha: 0.38),
+                  ),
                   child: Container(
                     // Narrow enough that a third card peeks past the screen edge
                     // when there are more than two — reinforcing the swipe hint.
@@ -1850,12 +1688,16 @@ class _DashboardViewState extends State<_DashboardView> {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          formatCurrency(total, code),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: oc.text,
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            formatCurrency(total, code),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: oc.text,
+                            ),
                           ),
                         ),
                       ],
@@ -1894,15 +1736,16 @@ class _DashboardViewState extends State<_DashboardView> {
         Padding(
           padding: const EdgeInsets.only(left: 2, bottom: 8),
           child: Text(
-            'WHAT CHANGED',
+            'What changed',
             style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
               color: oc.muted,
             ),
           ),
         ),
+        _AiInsightNarrative(insights: shown),
         for (int i = 0; i < shown.length; i++) ...[
           if (i > 0) const SizedBox(height: 8),
           _insightCard(oc, shown[i]),
@@ -1917,12 +1760,11 @@ class _DashboardViewState extends State<_DashboardView> {
       InsightTone.warn => ExpndColors.red,
       InsightTone.neutral => oc.accent,
     };
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: tint.withValues(alpha: 0.35),
-      depth: 3,
-      cornerRadius: 6,
+    return Container(
+      decoration: _panelDecoration(
+        oc,
+        borderColor: tint.withValues(alpha: 0.28),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
@@ -1980,12 +1822,9 @@ class _DashboardViewState extends State<_DashboardView> {
     String code,
   ) {
     final oc = context.oc;
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 4,
-      cornerRadius: 6,
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: _panelDecoration(oc),
       child: Column(
         children: [
           Padding(
@@ -1994,13 +1833,13 @@ class _DashboardViewState extends State<_DashboardView> {
               children: [
                 Flexible(
                   child: Text(
-                    'TRANSACTIONS',
+                    'Recent activity',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
                       color: oc.muted,
                     ),
                   ),
@@ -2022,7 +1861,7 @@ class _DashboardViewState extends State<_DashboardView> {
                     '${filtered.length}',
                     style: TextStyle(
                       fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: oc.accent,
                     ),
                   ),
@@ -2047,11 +1886,11 @@ class _DashboardViewState extends State<_DashboardView> {
                   child: Row(
                     children: [
                       Text(
-                        'SEE ALL',
+                        'See all',
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0,
                           color: oc.accent,
                         ),
                       ),
@@ -2067,16 +1906,16 @@ class _DashboardViewState extends State<_DashboardView> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Row(
               children: [
-                Expanded(child: _filterTab(context, 'ALL', null)),
+                Expanded(child: _filterTab(context, 'All', null)),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _filterTab(context, 'INCOME', TransactionType.income),
+                  child: _filterTab(context, 'Income', TransactionType.income),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _filterTab(
                     context,
-                    'EXPENSE',
+                    'Expense',
                     TransactionType.expense,
                   ),
                 ),
@@ -2178,7 +2017,7 @@ class _DashboardViewState extends State<_DashboardView> {
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
+            letterSpacing: 0,
             color: active ? ExpndColors.ink : oc.muted,
           ),
         ),
@@ -2202,6 +2041,416 @@ class _DashboardViewState extends State<_DashboardView> {
       'December',
     ];
     return '${months[d.month - 1]} ${d.year}';
+  }
+}
+
+/// A short narrative generated by Apple's system model when the device can run
+/// it, or built from rules otherwise. The verified cards remain directly
+/// below, so the explanation can always be checked against the figures that
+/// produced it.
+class _AiInsightNarrative extends StatefulWidget {
+  final List<Insight> insights;
+  const _AiInsightNarrative({required this.insights});
+
+  @override
+  State<_AiInsightNarrative> createState() => _AiInsightNarrativeState();
+}
+
+class _AiInsightNarrativeState extends State<_AiInsightNarrative>
+    with WidgetsBindingObserver {
+  CoachAnswer? _summary;
+  late String _fingerprint;
+  int _requestId = 0;
+
+  String _factsFingerprint(List<Insight> insights) =>
+      insights.map((i) => '${i.title}\u001f${i.detail}').join('\u001e');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppleIntelligence.available.addListener(_requestSummary);
+    _fingerprint = _factsFingerprint(widget.insights);
+    _requestSummary();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AiInsightNarrative oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = _factsFingerprint(widget.insights);
+    if (next == _fingerprint) return;
+    _fingerprint = next;
+    // Clear immediately: if the privacy eye hid amounts, an older summary must
+    // not keep a previously visible figure on screen during regeneration.
+    _summary = null;
+    _requestSummary();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Apple Intelligence may become available after its model download or
+    // setting changes. A change notifies [available], which regenerates.
+    if (state == AppLifecycleState.resumed) {
+      AppleIntelligence.refreshAvailability();
+    }
+  }
+
+  void _requestSummary() {
+    final requestId = ++_requestId;
+    final facts = List<Insight>.of(widget.insights);
+    AppleIntelligence.summarizeInsights(facts).then((summary) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _summary = summary);
+    });
+  }
+
+  @override
+  void dispose() {
+    _requestId++;
+    AppleIntelligence.available.removeListener(_requestSummary);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _summary;
+    if (summary == null) return const SizedBox.shrink();
+    final source = summary.source;
+
+    final oc = context.oc;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Semantics(
+        button: true,
+        label: source.isAi
+            ? 'On-device AI summary. ${summary.text}'
+            : 'Insights summary. ${summary.text}',
+        hint: 'Opens quick coaching choices',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            Haptics.light();
+            _showAiCoach(context, widget.insights, summary);
+          },
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: ExpndColors.gold.withValues(
+                alpha: Theme.of(context).brightness == Brightness.light
+                    ? 0.10
+                    : 0.08,
+              ),
+              borderRadius: BorderRadius.circular(ExpndRadius.card),
+              border: Border.all(
+                color: ExpndColors.gold.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(sfIcon(source.icon), size: 13, color: oc.accent),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          source.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                            color: oc.accent,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'Explore',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: oc.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(sfIcon('chevron.right'), size: 10, color: oc.accent),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    summary.text,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                      color: oc.text,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showAiCoach(
+  BuildContext context,
+  List<Insight> insights,
+  CoachAnswer summary,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _AiCoachSheet(
+      insights: List<Insight>.of(insights),
+      initialSummary: summary,
+    ),
+  );
+}
+
+class _AiCoachSheet extends StatefulWidget {
+  final List<Insight> insights;
+  final CoachAnswer initialSummary;
+  const _AiCoachSheet({required this.insights, required this.initialSummary});
+
+  @override
+  State<_AiCoachSheet> createState() => _AiCoachSheetState();
+}
+
+class _AiCoachSheetState extends State<_AiCoachSheet> {
+  AiCoachPrompt _selected = AiCoachPrompt.summary;
+  late CoachAnswer _answer;
+  final Map<AiCoachPrompt, CoachAnswer> _answers = {};
+  bool _loading = false;
+  int _requestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _answer = widget.initialSummary;
+    _answers[AiCoachPrompt.summary] = widget.initialSummary;
+  }
+
+  Future<void> _ask(AiCoachPrompt prompt) async {
+    Haptics.light();
+    final cached = _answers[prompt];
+    if (cached != null) {
+      _requestId++;
+      setState(() {
+        _selected = prompt;
+        _answer = cached;
+        _loading = false;
+      });
+      return;
+    }
+
+    final requestId = ++_requestId;
+    setState(() {
+      _selected = prompt;
+      _loading = true;
+    });
+    final answer = await AppleIntelligence.generateInsight(
+      widget.insights,
+      prompt: prompt,
+    );
+    if (!mounted || requestId != _requestId) return;
+    setState(() {
+      if (answer != null) {
+        _answers[prompt] = answer;
+        _answer = answer;
+      }
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final oc = context.oc;
+    final bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final source = _answer.source;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 10, 20, 20 + bottom),
+      decoration: BoxDecoration(
+        color: oc.bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        border: Border(top: BorderSide(color: oc.border)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: oc.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ExpndColors.gold.withValues(alpha: 0.16),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(sfIcon(source.icon), size: 17, color: oc.accent),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      source.title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: oc.text,
+                      ),
+                    ),
+                    Text(
+                      source.subtitle,
+                      style: TextStyle(fontSize: 11, color: oc.muted),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: Icon(sfIcon('xmark'), size: 17, color: oc.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: Container(
+              key: ValueKey('$_selected-$_loading-${_answer.text}'),
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 92),
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: oc.surface,
+                borderRadius: BorderRadius.circular(ExpndRadius.card),
+                border: Border.all(color: oc.border),
+              ),
+              child: _loading
+                  ? Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: oc.accent,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          source.isAi ? 'Thinking on your phone…' : 'Loading…',
+                          style: TextStyle(fontSize: 12, color: oc.muted),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      _answer.text,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                        color: oc.text,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _coachChoice(
+                AiCoachPrompt.focus,
+                'Focus',
+                Icons.center_focus_strong,
+              ),
+              _coachChoice(
+                AiCoachPrompt.win,
+                'Good news',
+                Icons.celebration_outlined,
+              ),
+              _coachChoice(
+                AiCoachPrompt.nextStep,
+                'Next step',
+                Icons.arrow_forward,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _coachChoice(AiCoachPrompt prompt, String label, IconData icon) {
+    final oc = context.oc;
+    final selected = _selected == prompt;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: () => _ask(prompt),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? ExpndColors.gold : oc.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? ExpndColors.goldDark : oc.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: selected ? ExpndColors.ink : oc.text),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? ExpndColors.ink : oc.text,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _requestId++;
+    super.dispose();
   }
 }
 

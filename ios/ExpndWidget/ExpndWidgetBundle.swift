@@ -12,5 +12,6 @@ import SwiftUI
 struct ExpndWidgetBundle: WidgetBundle {
     var body: some Widget {
         ExpndWidget()
+        QuickLogWidget()
     }
 }

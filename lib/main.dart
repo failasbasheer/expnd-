@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
@@ -9,14 +8,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/backup.dart';
+import 'services/capture_inbox.dart';
+import 'services/capture_trigger.dart';
+import 'services/demo_seed.dart';
 import 'services/reminders.dart';
 import 'services/widget_bridge.dart';
 import 'store/app_store.dart';
 import 'store/settings_store.dart';
 import 'theme/expnd_theme.dart';
 import 'screens/add_transaction.dart';
+import 'screens/capture_inbox_view.dart';
 import 'screens/home_shell.dart';
 import 'screens/lock_screen.dart';
+import 'screens/quick_capture.dart';
 import 'screens/account_setup.dart';
 import 'screens/splash_screen.dart';
 import 'screens/whats_new.dart';
@@ -45,7 +49,7 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
   Future<_Boot> _load() async {
     final init = _init();
     // Keep the splash up long enough for its animation to land.
-    await Future.delayed(const Duration(milliseconds: 1600));
+    await Future.delayed(const Duration(milliseconds: 1800));
     return init;
   }
 
@@ -53,9 +57,15 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
     Haptics.prefs = await SharedPreferences.getInstance();
     final settings = await SettingsStore.create();
     final store = await AppStore.create();
+    const seedDemo = bool.fromEnvironment('EXPND_SEED_DEMO');
+    if (seedDemo) seedDemoData(store, settings);
     store.generateRecurring();
     // Seed the home-screen widgets and keep them in sync with every change.
     await WidgetBridge.attach(store, settings);
+    // Collect anything logged from a widget button, the Lock Screen or Siri
+    // while the app was closed. Those captures can't reach the store from the
+    // extension's process, so this is the only path they take into the app.
+    await CaptureInbox.drain(store);
     // Re-arm every notification from the ledger + settings as they stand now.
     // iOS drops pending notifications when an app is reinstalled and Android
     // forgets them on some OEM restarts, so the whole schedule is rebuilt on
@@ -68,8 +78,13 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
     // was typed by hand and there is no server to re-fetch it from, so this
     // runs unprompted rather than waiting to be remembered. Failures are
     // swallowed inside — a backup must never stop the app from opening.
-    unawaited(maybeAutoBackup(
-        store, settings, await getApplicationDocumentsDirectory()));
+    unawaited(
+      maybeAutoBackup(
+        store,
+        settings,
+        await getApplicationDocumentsDirectory(),
+      ),
+    );
     return _Boot(settings, store);
   }
 
@@ -136,11 +151,13 @@ class ExpndApp extends StatelessWidget {
             // Bump all text ~15% for readability, composed on top of the
             // user's system text-size setting (so Dynamic Type still works),
             // then clamped so extreme accessibility sizes can't break layouts.
-            final system = MediaQuery.textScalerOf(context)
-                .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.15);
+            final system = MediaQuery.textScalerOf(
+              context,
+            ).clamp(minScaleFactor: 1.0, maxScaleFactor: 1.15);
             return MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: _BoostedTextScaler(system, 1.15)),
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: _BoostedTextScaler(system, 1.15)),
               child: GestureDetector(
                 onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
                 child: child,
@@ -153,27 +170,7 @@ class ExpndApp extends StatelessWidget {
     );
   }
 
-  ThemeData _buildTheme(Brightness b) {
-    final oc = ExpndColors(b);
-    return ThemeData(
-      brightness: b,
-      scaffoldBackgroundColor: oc.bg,
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: ExpndColors.gold,
-        brightness: b,
-      ),
-      // Smooth, consistent route transitions: a fluid horizontal slide with
-      // interactive back-swipe on iOS, and the modern zoom on Android.
-      pageTransitionsTheme: const PageTransitionsTheme(builders: {
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.android: ZoomPageTransitionsBuilder(
-          allowEnterRouteSnapshotting: false,
-        ),
-      }),
-    );
-  }
+  ThemeData _buildTheme(Brightness b) => buildExpndTheme(b);
 }
 
 /// Gives the whole app iOS-style momentum + overscroll bounce (instead of the
@@ -184,11 +181,11 @@ class _FluidScrollBehavior extends MaterialScrollBehavior {
 
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
@@ -196,8 +193,10 @@ class _FluidScrollBehavior extends MaterialScrollBehavior {
 
   @override
   Widget buildOverscrollIndicator(
-          BuildContext context, Widget child, ScrollableDetails details) =>
-      child;
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }
 
 /// Wraps another [TextScaler] and multiplies its result by [boost], so the
@@ -217,9 +216,7 @@ class _BoostedTextScaler extends TextScaler {
 
   @override
   bool operator ==(Object other) =>
-      other is _BoostedTextScaler &&
-      other.base == base &&
-      other.boost == boost;
+      other is _BoostedTextScaler && other.base == base && other.boost == boost;
 
   @override
   int get hashCode => Object.hash(base, boost);
@@ -239,6 +236,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   bool _shownWhatsNew = false;
   // A quick-add tap that arrived while the app was locked, replayed on unlock.
   bool _pendingQuickAdd = false;
+  // Which destination that tap was for: 'add', 'captures', or 'quick'.
+  String? _pendingTarget;
   StreamSubscription<Uri?>? _widgetClicks;
   // When the app last dropped to the background, so resume can decide whether
   // the auto-lock grace window has elapsed. Null means "not backgrounded".
@@ -259,6 +258,29 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     // the app is already running.
     HomeWidget.initiallyLaunchedFromHomeWidget().then(_onWidgetUri);
     _widgetClicks = HomeWidget.widgetClicked.listen(_onWidgetUri);
+    _checkCaptureTrigger();
+    // The Back Tap intent runs in this process once the app is foregrounded,
+    // which on a cold launch can be either side of the check above. One late
+    // look catches the other ordering; consuming is idempotent, so a request
+    // already handled simply isn't there any more.
+    Future.delayed(const Duration(milliseconds: 700), _checkCaptureTrigger);
+  }
+
+  /// Opens Quick Add if a Back Tap (or any Shortcut running the same intent)
+  /// asked for it.
+  Future<void> _checkCaptureTrigger() async {
+    // Checked before consuming as well as after: consuming clears the request,
+    // so reading one we then can't act on would throw the gesture away.
+    if (!mounted) return;
+    if (!await CaptureTrigger.consume()) return;
+    if (!mounted) return;
+    _pendingTarget = 'quick';
+    final settings = context.read<SettingsStore>();
+    if (settings.biometricLockEnabled && !_unlocked) {
+      _pendingQuickAdd = true;
+    } else {
+      _openQuickAdd();
+    }
   }
 
   @override
@@ -270,11 +292,17 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   void _onWidgetUri(Uri? uri) {
     if (uri == null || !mounted) return;
-    if (uri.host != 'add' && uri.path != '/add') return;
+    final target = uri.host.isNotEmpty
+        ? uri.host
+        : uri.path.replaceAll('/', '');
+    if (target != 'add' && target != 'captures') return;
+    _pendingTarget = target;
     final settings = context.read<SettingsStore>();
     final locked = settings.biometricLockEnabled && !_unlocked;
+    // Balances are visible on the other side of both of these, so a tap that
+    // arrives while locked waits for the unlock rather than bypassing it.
     if (locked) {
-      _pendingQuickAdd = true; // wait until the user gets past the lock screen
+      _pendingQuickAdd = true;
     } else {
       _openQuickAdd();
     }
@@ -282,14 +310,32 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   void _openQuickAdd() {
     _pendingQuickAdd = false;
+    final target = _pendingTarget;
+    _pendingTarget = null;
     final ctx = navigatorKey.currentContext;
-    if (ctx != null) showAddTransaction(ctx);
+    if (ctx == null) return;
+    if (target == 'captures') {
+      showCaptureInbox(ctx);
+    } else if (target == 'quick') {
+      showQuickCapture(ctx, source: 'backtap');
+    } else {
+      showAddTransaction(ctx);
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
     final settings = context.read<SettingsStore>();
+    // Captures taken while we were backgrounded, collected before the lock
+    // check below — draining has nothing to do with locking, and skipping it
+    // for everyone who hasn't turned on biometrics would strand their taps.
+    if (state == AppLifecycleState.resumed) {
+      CaptureInbox.drain(context.read<AppStore>());
+      // A Back Tap fired while the app sat in the background foregrounds it,
+      // which lands here rather than in initState.
+      _checkCaptureTrigger();
+    }
     if (!settings.biometricLockEnabled) return;
 
     switch (state) {
@@ -311,7 +357,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         _leftAt = null;
         // Immediately (grace 0) always expires; any window compares elapsed
         // time. Never having reached `paused` (leftAt null) leaves us unlocked.
-        final expired = leftAt != null &&
+        final expired =
+            leftAt != null &&
             DateTime.now().difference(leftAt).inSeconds >=
                 settings.autoLockGraceSeconds;
         setState(() {
@@ -363,12 +410,14 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       children: [
         const HomeShell(),
         if (locked)
-          LockScreen(onUnlock: () {
-            setState(() => _unlocked = true);
-            _maybeShowSetup();
-            _maybeShowWhatsNew();
-            if (_pendingQuickAdd) _openQuickAdd();
-          })
+          LockScreen(
+            onUnlock: () {
+              setState(() => _unlocked = true);
+              _maybeShowSetup();
+              _maybeShowWhatsNew();
+              if (_pendingQuickAdd) _openQuickAdd();
+            },
+          )
         // Away but still within the grace window: no re-auth needed, just an
         // opaque cover so nothing shows through the app-switcher snapshot.
         else if (_covering)

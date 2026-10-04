@@ -20,6 +20,7 @@ class AppStore extends ChangeNotifier {
   static const _kEmis = 'emis';
   static const _kDebts = 'debts';
   static const _kAccountOrder = 'accountOrder';
+  static const _kPendingCaptures = 'pendingCaptures';
 
   static Future<AppStore> create() async {
     await Hive.initFlutter();
@@ -34,6 +35,7 @@ class AppStore extends ChangeNotifier {
   final List<SavingsGoal> _goals = [];
   final List<Emi> _emis = [];
   final List<Debt> _debts = [];
+  final List<PendingCapture> _pendingCaptures = [];
 
   /// User-defined account order (account ids). Empty means "no preference" —
   /// fall back to creation order. Ids not listed here sort after listed ones,
@@ -74,6 +76,8 @@ class AppStore extends ChangeNotifier {
     return list;
   }
 
+  List<String> get accountOrder => List<String>.from(_accountOrder);
+
   /// Sets the user's account arrangement (see [_accountOrder]). Callers pass
   /// the full list of ids in the new order.
   void reorderAccounts(List<String> orderedIds) {
@@ -105,8 +109,9 @@ class AppStore extends ChangeNotifier {
   Account? accountFor(String? id) =>
       id == null ? null : _accounts.where((a) => a.id == id).firstOrNull;
 
-  CustomCategory? customCategoryFor(String? id) =>
-      id == null ? null : _customCategories.where((c) => c.id == id).firstOrNull;
+  CustomCategory? customCategoryFor(String? id) => id == null
+      ? null
+      : _customCategories.where((c) => c.id == id).firstOrNull;
 
   List<Transaction> transactionsForAccount(String accountId) =>
       _transactions.where((t) => t.accountId == accountId).toList();
@@ -125,10 +130,10 @@ class AppStore extends ChangeNotifier {
   // so ongoing EMIs eat into available credit, exactly like a real card.
 
   double creditUsedFor(Account a) {
-    final base = a.balance < 0 ? 0.0 : a.balance;
-    final emi = emisForAccount(a.id)
-        .where((e) => e.isActive)
-        .fold(0.0, (s, e) => s + e.outstandingPrincipal);
+    final base = balanceFor(a).clamp(0.0, double.infinity);
+    final emi = emisForAccount(
+      a.id,
+    ).where((e) => e.isActive).fold(0.0, (s, e) => s + e.outstandingPrincipal);
     return base + emi;
   }
 
@@ -149,13 +154,18 @@ class AppStore extends ChangeNotifier {
   /// source account and INTO the destination account (so across all accounts
   /// transfers cancel out and never change total net worth).
   double transactionNet(String accountId) {
+    final isCredit = accountFor(accountId)?.type == AccountType.credit;
     var net = 0.0;
     for (final t in _transactions) {
       if (t.type == TransactionType.transfer) {
-        if (t.accountId == accountId) net -= t.amount;
-        if (t.toAccountId == accountId) net += t.amount;
+        if (t.accountId == accountId) net += isCredit ? t.amount : -t.amount;
+        if (t.toAccountId == accountId) net += isCredit ? -t.amount : t.amount;
       } else if (t.accountId == accountId) {
-        net += t.type == TransactionType.income ? t.amount : -t.amount;
+        if (isCredit) {
+          net += t.type == TransactionType.income ? -t.amount : t.amount;
+        } else {
+          net += t.type == TransactionType.income ? t.amount : -t.amount;
+        }
       }
     }
     return net;
@@ -166,6 +176,11 @@ class AppStore extends ChangeNotifier {
   /// so adding/editing/deleting a transaction always reconciles automatically.
   double balanceFor(Account acc) => acc.balance + transactionNet(acc.id);
 
+  /// Net-worth contribution: assets are positive, credit-card liabilities are
+  /// negative and include both posted spending and active EMI principal.
+  double netWorthFor(Account acc) =>
+      acc.type == AccountType.credit ? -creditUsedFor(acc) : balanceFor(acc);
+
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   void addTransaction(Transaction t) {
@@ -173,7 +188,10 @@ class AppStore extends ChangeNotifier {
     _persist();
   }
 
-  void updateTransaction() => _persist(); // caller mutated in place
+  void updateTransaction() {
+    _reconcileAutoSettledDebts();
+    _persist();
+  } // caller mutated in place
 
   /// Posts a recurring series' next occurrence early, then advances the
   /// schedule one step so it stops being projected on the Upcoming screen.
@@ -213,6 +231,7 @@ class AppStore extends ChangeNotifier {
 
   void deleteTransaction(Transaction t) {
     _transactions.removeWhere((e) => e.id == t.id);
+    _reconcileAutoSettledDebts();
     _persist();
   }
 
@@ -221,6 +240,7 @@ class AppStore extends ChangeNotifier {
   void deleteTransactions(Set<String> ids) {
     if (ids.isEmpty) return;
     _transactions.removeWhere((e) => ids.contains(e.id));
+    _reconcileAutoSettledDebts();
     _persist();
   }
 
@@ -230,10 +250,25 @@ class AppStore extends ChangeNotifier {
   }
 
   void deleteAccount(Account a) {
-    // nullify references (SwiftData deleteRule: .nullify)
+    // A transfer with a deleted endpoint is no longer a meaningful movement;
+    // remove it rather than leaving a one-sided phantom transfer.
+    _transactions.removeWhere(
+      (t) =>
+          t.type == TransactionType.transfer &&
+          (t.accountId == a.id || t.toAccountId == a.id),
+    );
     for (final t in _transactions) {
       if (t.accountId == a.id) t.accountId = null;
       if (t.toAccountId == a.id) t.toAccountId = null;
+    }
+    for (final g in _goals) {
+      if (g.accountId == a.id) {
+        g.accountId = null;
+        g.allocatedAmount = 0;
+      }
+    }
+    for (final d in _debts) {
+      if (d.accountId == a.id) d.accountId = null;
     }
     _accounts.removeWhere((e) => e.id == a.id);
     _accountOrder.remove(a.id);
@@ -274,19 +309,24 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Total actually paid toward [e] so far, from recorded installments.
-  double paidOn(Emi e) =>
-      installmentsOn(e).fold(0.0, (s, t) => s + t.amount);
+  double paidOn(Emi e) => installmentsOn(e).fold(0.0, (s, t) => s + t.amount);
 
   /// True once an installment has been recorded in [month] — used to stop the
   /// same one being logged twice from the Upcoming list.
-  bool isInstallmentPaid(Emi e, DateTime month) => installmentsOn(e).any((t) =>
-      t.date.year == month.year && t.date.month == month.month);
+  bool isInstallmentPaid(Emi e, DateTime month) => installmentsOn(
+    e,
+  ).any((t) => t.date.year == month.year && t.date.month == month.month);
 
   /// Records one installment of [e] as really paid out of [accountId].
   ///
   /// [amount] defaults to the scheduled installment, but is settable because
   /// a lender's rounding rarely matches ours to the paisa.
-  Transaction payEmiInstallment(Emi e, {String? accountId, double? amount, DateTime? date}) {
+  Transaction payEmiInstallment(
+    Emi e, {
+    String? accountId,
+    double? amount,
+    DateTime? date,
+  }) {
     final t = Transaction(
       note: e.name.trim().isEmpty ? 'EMI installment' : e.name.trim(),
       amount: amount ?? e.monthlyAmount,
@@ -317,7 +357,9 @@ class AppStore extends ChangeNotifier {
   }
 
   void setBudget(TransactionCategory category, double limit) {
-    final existing = _budgets.where((b) => b.categoryRaw == category.raw).firstOrNull;
+    final existing = _budgets
+        .where((b) => b.categoryRaw == category.raw)
+        .firstOrNull;
     if (limit <= 0) {
       if (existing != null) _budgets.remove(existing);
     } else if (existing != null) {
@@ -334,12 +376,14 @@ class AppStore extends ChangeNotifier {
   /// the profile category-budgets section and the add-transaction warning:
   /// expenses only, built-in categories only, same calendar month.
   ({double limit, double spent, double over})? categoryBudgetOverage(
-      Transaction t,
-      {bool rollover = false}) {
+    Transaction t, {
+    bool rollover = false,
+  }) {
     if (t.type != TransactionType.expense) return null;
     if (t.customCategoryId != null) return null;
-    final budget =
-        _budgets.where((b) => b.categoryRaw == t.category.raw).firstOrNull;
+    final budget = _budgets
+        .where((b) => b.categoryRaw == t.category.raw)
+        .firstOrNull;
     if (budget == null || budget.limit <= 0) return null;
 
     final limit = rollover
@@ -362,7 +406,10 @@ class AppStore extends ChangeNotifier {
     _persist();
   }
 
-  void updateDebt() => _persist(); // caller mutated in place
+  void updateDebt() {
+    _reconcileAutoSettledDebts();
+    _persist();
+  } // caller mutated in place
 
   void deleteDebt(Debt d) {
     // Untag the repayments but keep them: the money really did move.
@@ -383,8 +430,7 @@ class AppStore extends ChangeNotifier {
     return list;
   }
 
-  double repaidOn(Debt d) =>
-      repaymentsOn(d).fold(0.0, (s, t) => s + t.amount);
+  double repaidOn(Debt d) => repaymentsOn(d).fold(0.0, (s, t) => s + t.amount);
 
   /// What's still owed. Settling by hand closes it out regardless of what the
   /// repayments add up to — people forgive the last ten rupees.
@@ -398,9 +444,7 @@ class AppStore extends ChangeNotifier {
   /// a real transaction against [account], tagged to the debt.
   Transaction repayDebt(Debt d, double amount, String? accountId) {
     final t = Transaction(
-      note: d.theyOweMe
-          ? '${d.person} repaid'
-          : 'Repaid ${d.person}',
+      note: d.theyOweMe ? '${d.person} repaid' : 'Repaid ${d.person}',
       amount: amount,
       category: TransactionCategory.other,
       // They pay me back: money comes in. I pay them back: money goes out.
@@ -410,9 +454,17 @@ class AppStore extends ChangeNotifier {
     );
     _transactions.add(t);
     // Fully repaid closes it without the user having to also tap "settled".
-    if (d.amount - repaidOn(d) <= 0.005) d.settledDate = DateTime.now();
+    if (d.amount - repaidOn(d) <= 0.005) d.autoSettled = true;
     _persist();
     return t;
+  }
+
+  void _reconcileAutoSettledDebts() {
+    for (final d in _debts) {
+      if (d.autoSettled && d.amount - repaidOn(d) > 0.005) {
+        d.autoSettled = false;
+      }
+    }
   }
 
   /// Total still owed to the user across every open debt.
@@ -492,9 +544,8 @@ class AppStore extends ChangeNotifier {
 
   /// The rows of a split purchase, oldest first so they read in entry order.
   List<Transaction> splitRows(String groupId) {
-    final list =
-        _transactions.where((t) => t.splitGroupId == groupId).toList()
-          ..sort((a, b) => a.id.compareTo(b.id));
+    final list = _transactions.where((t) => t.splitGroupId == groupId).toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return list;
   }
 
@@ -504,7 +555,7 @@ class AppStore extends ChangeNotifier {
   /// expense, which is exactly what a split should do.
   List<Transaction> addSplit({
     required List<({double amount, TransactionCategory category, String note})>
-        lines,
+    lines,
     required TransactionType type,
     required DateTime date,
     String? accountId,
@@ -584,8 +635,11 @@ class AppStore extends ChangeNotifier {
   /// underspend adds to this month, overspend eats into it. Floored so a
   /// blown month can't produce a negative budget (progress math divides by
   /// the limit).
-  double rolledOverLimit(double baseLimit, DateTime month,
-      {TransactionCategory? category}) {
+  double rolledOverLimit(
+    double baseLimit,
+    DateTime month, {
+    TransactionCategory? category,
+  }) {
     if (baseLimit <= 0) return baseLimit;
     final prev = DateTime(month.year, month.month - 1);
     final carried = baseLimit - spentInMonth(prev, category: category);
@@ -675,6 +729,8 @@ class AppStore extends ChangeNotifier {
     required List<SavingsGoal> goals,
     required List<Emi> emis,
     List<Debt> debts = const [],
+    List<PendingCapture> pendingCaptures = const [],
+    List<String> accountOrder = const [],
   }) {
     _transactions
       ..clear()
@@ -697,6 +753,10 @@ class AppStore extends ChangeNotifier {
     _debts
       ..clear()
       ..addAll(debts);
+    _pendingCaptures
+      ..clear()
+      ..addAll(pendingCaptures);
+    _accountOrder = List<String>.from(accountOrder);
     _persist();
   }
 
@@ -709,6 +769,7 @@ class AppStore extends ChangeNotifier {
     _goals.clear();
     _emis.clear();
     _debts.clear();
+    _pendingCaptures.clear();
     _accountOrder = [];
     _persist();
   }
@@ -763,6 +824,46 @@ class AppStore extends ChangeNotifier {
     return generated;
   }
 
+  // ── Pending captures (widget / Siri quick logging) ────────────────────────
+
+  // These are not transactions and never touch a balance. They are a holding
+  // pen for amounts captured outside the app, waiting for the user to say what
+  // they were. Filing one is an ordinary addTransaction plus a delete here, so
+  // the ledger keeps its single authority over balances.
+
+  /// Unreviewed captures, oldest first — the order the user logged them, which
+  /// is the order they'll remember them in.
+  List<PendingCapture> get pendingCaptures {
+    final list = List<PendingCapture>.from(_pendingCaptures);
+    list.sort((a, b) => a.capturedAt.compareTo(b.capturedAt));
+    return list;
+  }
+
+  /// Adds captures drained from the native queue, skipping any id already
+  /// held. The native side keeps its entries until we acknowledge them, so a
+  /// drain interrupted mid-way replays safely.
+  void addPendingCaptures(Iterable<PendingCapture> captures) {
+    final known = _pendingCaptures.map((c) => c.id).toSet();
+    final fresh = captures.where((c) => !known.contains(c.id)).toList();
+    if (fresh.isEmpty) return;
+    _pendingCaptures.addAll(fresh);
+    _persist();
+  }
+
+  void deletePendingCapture(PendingCapture c) {
+    _pendingCaptures.removeWhere((e) => e.id == c.id);
+    _persist();
+  }
+
+  /// Files a capture as a real transaction. The caller supplies the finished
+  /// [Transaction] from the review flow; this just commits both sides together
+  /// so a capture can never be both filed and still pending.
+  void filePendingCapture(PendingCapture c, Transaction t) {
+    _transactions.add(t);
+    _pendingCaptures.removeWhere((e) => e.id == c.id);
+    _persist();
+  }
+
   // ── Persistence ───────────────────────────────────────────────────────────
 
   void _load() {
@@ -787,6 +888,9 @@ class AppStore extends ChangeNotifier {
     _debts
       ..clear()
       ..addAll(_decode(_kDebts).map(Debt.fromJson));
+    _pendingCaptures
+      ..clear()
+      ..addAll(_decode(_kPendingCaptures).map(PendingCapture.fromJson));
     final rawOrder = _box.get(_kAccountOrder) as String?;
     _accountOrder = rawOrder == null || rawOrder.isEmpty
         ? []
@@ -800,15 +904,23 @@ class AppStore extends ChangeNotifier {
   }
 
   void _persist() {
-    _box.put(_kTransactions,
-        jsonEncode(_transactions.map((e) => e.toJson()).toList()));
+    _box.put(
+      _kTransactions,
+      jsonEncode(_transactions.map((e) => e.toJson()).toList()),
+    );
     _box.put(_kAccounts, jsonEncode(_accounts.map((e) => e.toJson()).toList()));
-    _box.put(_kCustomCategories,
-        jsonEncode(_customCategories.map((e) => e.toJson()).toList()));
+    _box.put(
+      _kCustomCategories,
+      jsonEncode(_customCategories.map((e) => e.toJson()).toList()),
+    );
     _box.put(_kBudgets, jsonEncode(_budgets.map((e) => e.toJson()).toList()));
     _box.put(_kGoals, jsonEncode(_goals.map((e) => e.toJson()).toList()));
     _box.put(_kEmis, jsonEncode(_emis.map((e) => e.toJson()).toList()));
     _box.put(_kDebts, jsonEncode(_debts.map((e) => e.toJson()).toList()));
+    _box.put(
+      _kPendingCaptures,
+      jsonEncode(_pendingCaptures.map((e) => e.toJson()).toList()),
+    );
     _box.put(_kAccountOrder, jsonEncode(_accountOrder));
     notifyListeners();
   }

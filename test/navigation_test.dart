@@ -3,6 +3,7 @@
 // break by accident, and neither shows up in a store test — so they are
 // pinned here.
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -60,13 +61,50 @@ Future<Widget> _app(Widget home) async {
 }
 
 void main() {
-  testWidgets('the tab bar offers PLAN, and no longer PROFILE', (t) async {
+  testWidgets('the tab bar offers Plan, and no longer Profile', (t) async {
     _sizeView(t);
     await t.pumpWidget(await _app(const HomeShell()));
     await t.pumpAndSettle();
 
-    expect(find.text('PLAN'), findsWidgets);
+    final add = find.byTooltip('Add transaction');
+    expect(t.getTopLeft(add).dy, greaterThan(500));
+    final scaffold = t.widget<Scaffold>(find.byType(Scaffold).first);
+    expect(
+      t.getSize(find.byWidget(scaffold.bottomNavigationBar!)).height,
+      lessThan(130),
+    );
+    expect(find.text('Plan'), findsWidgets);
     expect(find.text('PROFILE'), findsNothing);
+  });
+
+  testWidgets('navigation controls expose accessible tap actions', (t) async {
+    _sizeView(t);
+    final semantics = t.ensureSemantics();
+    try {
+      await t.pumpWidget(await _app(const HomeShell()));
+      await t.pumpAndSettle();
+      for (final label in [
+        'Home tab',
+        'Analytics tab',
+        'Wallet tab',
+        'Plan tab',
+        'Add transaction',
+      ]) {
+        final control = find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.label == label,
+        );
+        expect(
+          t
+              .getSemantics(control)
+              .getSemanticsData()
+              .hasAction(SemanticsAction.tap),
+          isTrue,
+          reason: label,
+        );
+      }
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('the header avatar opens settings', (t) async {
@@ -89,9 +127,13 @@ void main() {
     await t.pumpWidget(await _app(const SettingsView()));
     await t.pumpAndSettle();
 
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('General'), findsOneWidget);
+    expect(find.text('Data'), findsOneWidget);
+    expect(find.text('CUSTOM CATEGORIES'), findsNothing);
+    await t.tap(find.text('Categories & tags'));
+    await t.pumpAndSettle();
     expect(find.text('CUSTOM CATEGORIES'), findsOneWidget);
-    expect(find.text('GENERAL'), findsOneWidget);
-    expect(find.text('DATA'), findsOneWidget);
     // Money-management sections belong to PLAN now.
     expect(find.text('CATEGORY BUDGETS'), findsNothing);
   });
@@ -109,7 +151,6 @@ void main() {
 
     // Flush to the header's right gutter rather than floating mid-row.
     final header = t.getRect(find.byType(ExpndHeader));
-    expect(header.right - avatar.right,
-        closeTo(ExpndHeaderMetrics.gutter, 4));
+    expect(header.right - avatar.right, closeTo(ExpndHeaderMetrics.gutter, 4));
   });
 }

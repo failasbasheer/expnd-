@@ -31,15 +31,22 @@ void main() {
 
   AppStore store() => AppStore(_FakeBox());
 
-  void spend(AppStore s, double amount, DateTime date,
-      {TransactionCategory cat = TransactionCategory.food, String note = ''}) {
-    s.addTransaction(Transaction(
-      note: note,
-      amount: amount,
-      category: cat,
-      type: TransactionType.expense,
-      date: date,
-    ));
+  void spend(
+    AppStore s,
+    double amount,
+    DateTime date, {
+    TransactionCategory cat = TransactionCategory.food,
+    String note = '',
+  }) {
+    s.addTransaction(
+      Transaction(
+        note: note,
+        amount: amount,
+        category: cat,
+        type: TransactionType.expense,
+        date: date,
+      ),
+    );
   }
 
   List<Insight> run(AppStore s, {double budget = 0}) =>
@@ -76,8 +83,10 @@ void main() {
       spend(s, 200, DateTime(2026, 6, 10));
       final out = run(s, budget: 1000);
       expect(has(out, 'On track to finish'), isTrue);
-      expect(out.firstWhere((i) => i.title.contains('On track')).tone,
-          InsightTone.good);
+      expect(
+        out.firstWhere((i) => i.title.contains('On track')).tone,
+        InsightTone.good,
+      );
     });
 
     test('stays quiet about pace when no budget is set', () {
@@ -174,15 +183,23 @@ void main() {
     test('always fills the queue, even with nothing to report', () {
       final bodies = buildReminderBodies(store(), 'USD', from: now, count: 7);
       expect(bodies.length, 7);
-      expect(bodies.toSet().length, greaterThan(1),
-          reason: 'a week of identical nudges is what gets notifications muted');
+      expect(
+        bodies.toSet().length,
+        greaterThan(1),
+        reason: 'a week of identical nudges is what gets notifications muted',
+      );
     });
 
     test('leads with the user\'s own figures when there are some', () {
       final s = store();
       spend(s, 1200, DateTime(2026, 6, 10));
-      final bodies = buildReminderBodies(s, 'USD',
-          from: now, monthlyBudget: 1000, count: 7);
+      final bodies = buildReminderBodies(
+        s,
+        'USD',
+        from: now,
+        monthlyBudget: 1000,
+        count: 7,
+      );
       expect(bodies.first, contains('Over budget'));
       expect(bodies.length, 7);
     });

@@ -74,30 +74,37 @@ List<Insight> buildInsights(
     final diff = monthlyBudget - projected;
 
     if (spent > monthlyBudget) {
-      out.add(Insight(
-        title: 'Over budget by ${money(spent - monthlyBudget)}',
-        detail: 'with ${daysInMonth - now.day} days still to go',
-        tone: InsightTone.warn,
-        icon: 'exclamationmark.triangle.fill',
-        weight: 100,
-      ));
+      out.add(
+        Insight(
+          title: 'Over budget by ${money(spent - monthlyBudget)}',
+          detail: 'with ${daysInMonth - now.day} days still to go',
+          tone: InsightTone.warn,
+          icon: 'exclamationmark.triangle.fill',
+          weight: 100,
+        ),
+      );
     } else if (diff < 0) {
-      out.add(Insight(
-        title: 'On pace to overspend',
-        detail: 'heading for ${money(projected)} against ${money(monthlyBudget)}',
-        tone: InsightTone.warn,
-        icon: 'chart.line.uptrend.xyaxis',
-        weight: 90,
-      ));
+      out.add(
+        Insight(
+          title: 'On pace to overspend',
+          detail:
+              'heading for ${money(projected)} against ${money(monthlyBudget)}',
+          tone: InsightTone.warn,
+          icon: 'chart.line.uptrend.xyaxis',
+          weight: 90,
+        ),
+      );
     } else if (now.day >= 10) {
       // Early in the month the projection is too noisy to be worth saying.
-      out.add(Insight(
-        title: 'On track to finish ${money(diff)} under',
-        detail: '${money(spent)} of ${money(monthlyBudget)} so far',
-        tone: InsightTone.good,
-        icon: 'checkmark.circle.fill',
-        weight: 60,
-      ));
+      out.add(
+        Insight(
+          title: 'On track to finish ${money(diff)} under',
+          detail: '${money(spent)} of ${money(monthlyBudget)} so far',
+          tone: InsightTone.good,
+          icon: 'checkmark.circle.fill',
+          weight: 60,
+        ),
+      );
     }
   }
 
@@ -126,31 +133,39 @@ List<Insight> buildInsights(
     if (change.abs() < 0.25) continue;
 
     final pct = (change.abs() * 100).round();
-    categoryShifts.add(Insight(
-      title: '${cat.raw} is ${change > 0 ? 'up' : 'down'} $pct%',
-      detail: '${money(thisMonth)} vs a ${money(average)} average',
-      tone: change > 0 ? InsightTone.warn : InsightTone.good,
-      icon: cat.icon,
-      // Bigger swings, and rises over falls, are the ones worth the space.
-      weight: 40 + (change.abs() * 20).round() + (change > 0 ? 5 : 0),
-    ));
+    categoryShifts.add(
+      Insight(
+        title: '${cat.raw} is ${change > 0 ? 'up' : 'down'} $pct%',
+        detail: '${money(thisMonth)} vs a ${money(average)} average',
+        tone: change > 0 ? InsightTone.warn : InsightTone.good,
+        icon: cat.icon,
+        // Bigger swings, and rises over falls, are the ones worth the space.
+        weight: 40 + (change.abs() * 20).round() + (change > 0 ? 5 : 0),
+      ),
+    );
   }
   categoryShifts.sort((a, b) => b.weight.compareTo(a.weight));
   out.addAll(categoryShifts.take(2));
 
   // ── Renewals landing this week ────────────────────────────────────────────
-  final week = projectUpcoming(store, from: now, horizonDays: 7)
-      .where((i) => !i.isInflow)
-      .toList();
+  final week = projectUpcoming(
+    store,
+    from: now,
+    horizonDays: 7,
+  ).where((i) => !i.isInflow).toList();
   if (week.isNotEmpty) {
     final total = week.fold(0.0, (s, i) => s + i.amount);
-    out.add(Insight(
-      title: '${week.length} payment${week.length == 1 ? '' : 's'} due this week',
-      detail: '${money(total)} committed by ${_weekday(now.add(const Duration(days: 7)))}',
-      tone: InsightTone.neutral,
-      icon: 'calendar.badge.clock',
-      weight: 70,
-    ));
+    out.add(
+      Insight(
+        title:
+            '${week.length} payment${week.length == 1 ? '' : 's'} due this week',
+        detail:
+            '${money(total)} committed by ${_weekday(now.add(const Duration(days: 7)))}',
+        tone: InsightTone.neutral,
+        icon: 'calendar.badge.clock',
+        weight: 70,
+      ),
+    );
   }
 
   // ── A category held under its budget, month after month ───────────────────
@@ -166,13 +181,15 @@ List<Insight> buildInsights(
       streak++;
     }
     if (streak >= 3) {
-      out.add(Insight(
-        title: '${cat.raw} under budget $streak months running',
-        detail: 'holding at ${money(b.limit)} a month',
-        tone: InsightTone.good,
-        icon: 'checkmark.circle.fill',
-        weight: 50,
-      ));
+      out.add(
+        Insight(
+          title: '${cat.raw} under budget $streak months running',
+          detail: 'holding at ${money(b.limit)} a month',
+          tone: InsightTone.good,
+          icon: 'checkmark.circle.fill',
+          weight: 50,
+        ),
+      );
     }
   }
 
@@ -183,37 +200,45 @@ List<Insight> buildInsights(
   if (txns.isNotEmpty) {
     final gap = now.difference(txns.first.date).inDays;
     if (gap >= 3) {
-      out.add(Insight(
-        title: 'Nothing logged in $gap days',
-        detail: 'the longer the gap, the harder it is to remember',
-        tone: InsightTone.warn,
-        icon: 'clock.fill',
-        weight: 80,
-      ));
+      out.add(
+        Insight(
+          title: 'Nothing logged in $gap days',
+          detail: 'the longer the gap, the harder it is to remember',
+          tone: InsightTone.warn,
+          icon: 'clock.fill',
+          weight: 80,
+        ),
+      );
     }
   }
 
   // ── Biggest single expense this month ─────────────────────────────────────
-  final monthExpenses = txns
-      .where((t) =>
-          t.type == TransactionType.expense &&
-          t.date.year == now.year &&
-          t.date.month == now.month)
-      .toList()
-    ..sort((a, b) => b.amount.compareTo(a.amount));
+  final monthExpenses =
+      txns
+          .where(
+            (t) =>
+                t.type == TransactionType.expense &&
+                t.date.year == now.year &&
+                t.date.month == now.month,
+          )
+          .toList()
+        ..sort((a, b) => b.amount.compareTo(a.amount));
   if (monthExpenses.length >= 3) {
     final top = monthExpenses.first;
     final total = monthExpenses.fold(0.0, (s, t) => s + t.amount);
     final share = total > 0 ? top.amount / total : 0.0;
     if (share >= 0.25) {
-      out.add(Insight(
-        title: '${(share * 100).round()}% of this month was one purchase',
-        detail: '${money(top.amount)}'
-            '${top.note.trim().isEmpty ? ' on ${top.category.raw}' : ' — ${top.note.trim()}'}',
-        tone: InsightTone.neutral,
-        icon: 'chart.pie.fill',
-        weight: 45,
-      ));
+      out.add(
+        Insight(
+          title: '${(share * 100).round()}% of this month was one purchase',
+          detail:
+              '${money(top.amount)}'
+              '${top.note.trim().isEmpty ? ' on ${top.category.raw}' : ' — ${top.note.trim()}'}',
+          tone: InsightTone.neutral,
+          icon: 'chart.pie.fill',
+          weight: 45,
+        ),
+      );
     }
   }
 
@@ -222,11 +247,16 @@ List<Insight> buildInsights(
 }
 
 const _weekdays = [
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
 ];
 
 String _weekday(DateTime d) => _weekdays[d.weekday - 1];
-
 
 /// The voice a reminder speaks in. Chosen by the user; parsed from the stored
 /// string so an unknown value falls back to [neutral] rather than throwing.
@@ -280,15 +310,12 @@ ReminderVoice reminderVoice(ReminderTone tone, {String? name}) {
         ],
       );
     case ReminderTone.blunt:
-      return ReminderVoice(
-        n == null ? 'Log it.' : '$n — log it.',
-        const [
-          'Type it in now, not on Sunday.',
-          'Nothing logged yet today.',
-          'Small ones count. Add them.',
-          'Thirty seconds. Do it.',
-        ],
-      );
+      return ReminderVoice(n == null ? 'Log it.' : '$n — log it.', const [
+        'Type it in now, not on Sunday.',
+        'Nothing logged yet today.',
+        'Small ones count. Add them.',
+        'Thirty seconds. Do it.',
+      ]);
     case ReminderTone.playful:
       return ReminderVoice(
         n == null ? 'Where’d it go? 💸' : '$n, where’d it go? 💸',
@@ -347,13 +374,15 @@ List<String> buildReminderBodies(
     return List.filled(count, custom);
   }
 
-  final insights =
-      buildInsights(store, code, from: from, monthlyBudget: monthlyBudget);
+  final insights = buildInsights(
+    store,
+    code,
+    from: from,
+    monthlyBudget: monthlyBudget,
+  );
   final filler = reminderVoice(tone).filler;
 
-  final auto = <String>[
-    for (final i in insights.take(count)) i.sentence,
-  ];
+  final auto = <String>[for (final i in insights.take(count)) i.sentence];
   var f = 0;
   while (auto.length < count) {
     auto.add(filler[f++ % filler.length]);
@@ -378,8 +407,12 @@ String buildWeeklySummaryBody(
   DateTime? from,
   double monthlyBudget = 0,
 }) {
-  final insights =
-      buildInsights(store, code, from: from, monthlyBudget: monthlyBudget);
+  final insights = buildInsights(
+    store,
+    code,
+    from: from,
+    monthlyBudget: monthlyBudget,
+  );
   if (insights.isEmpty) {
     return 'A quiet week on the books. Log as you go and it stays effortless.';
   }

@@ -131,8 +131,9 @@ _FakeBox _shipped_1_0_0() {
     },
   ]);
 
-  box._m['categoryBudgets'] =
-      jsonEncode([{'id': 'b-1', 'categoryRaw': 'Groceries', 'limit': 400.0}]);
+  box._m['categoryBudgets'] = jsonEncode([
+    {'id': 'b-1', 'categoryRaw': 'Groceries', 'limit': 400.0},
+  ]);
 
   // The pre-rename field name, which is the whole point of the check.
   box._m['savingsGoals'] = jsonEncode([
@@ -232,8 +233,10 @@ void main() {
     test('an account order written before that key existed is not lost', () {
       final store = AppStore(_shipped_1_0_0());
       // 1.0.0 had no 'accountOrder' key. Both accounts must still be listed.
-      expect(store.accounts.map((a) => a.id),
-          containsAll([_checkingId, _cardId]));
+      expect(
+        store.accounts.map((a) => a.id),
+        containsAll([_checkingId, _cardId]),
+      );
     });
   });
 }

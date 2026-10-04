@@ -35,8 +35,11 @@ class BackupException implements Exception {
 /// Automatic on-device snapshots pass false: the image files are already
 /// sitting in the same app container the snapshot is written to, so copying
 /// them into every snapshot would multiply the app's storage for nothing.
-Map<String, dynamic> buildBackup(AppStore store, SettingsStore settings,
-    {bool embedPhotos = true}) {
+Map<String, dynamic> buildBackup(
+  AppStore store,
+  SettingsStore settings, {
+  bool embedPhotos = true,
+}) {
   // Photos ride along as base64 keyed by filename. Missing files are skipped
   // rather than failing the whole backup — a dead path shouldn't hold the
   // rest of the data hostage.
@@ -60,12 +63,13 @@ Map<String, dynamic> buildBackup(AppStore store, SettingsStore settings,
     'settings': settings.backupSnapshot(),
     'transactions': store.transactions.map((e) => e.toJson()).toList(),
     'accounts': store.accounts.map((e) => e.toJson()).toList(),
-    'customCategories':
-        store.customCategories.map((e) => e.toJson()).toList(),
+    'customCategories': store.customCategories.map((e) => e.toJson()).toList(),
     'categoryBudgets': store.budgets.map((e) => e.toJson()).toList(),
     'savingsGoals': store.goals.map((e) => e.toJson()).toList(),
     'emis': store.emis.map((e) => e.toJson()).toList(),
     'debts': store.debts.map((e) => e.toJson()).toList(),
+    'pendingCaptures': store.pendingCaptures.map((e) => e.toJson()).toList(),
+    'accountOrder': store.accountOrder,
     'photos': photos,
   };
 }
@@ -103,8 +107,9 @@ Future<RestoreSummary> restoreBackup(
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
     throw BackupException(
-        'This backup was made by a newer version of EXPND — update the app '
-        'and try again.');
+      'This backup was made by a newer version of EXPND — update the app '
+      'and try again.',
+    );
   }
 
   // Parse it all up front: any malformed entity aborts before the wipe.
@@ -115,6 +120,7 @@ Future<RestoreSummary> restoreBackup(
   final List<SavingsGoal> goals;
   final List<Emi> emis;
   final List<Debt> debts;
+  final List<PendingCapture> pendingCaptures;
   try {
     List<T> parse<T>(String key, T Function(Map) fromJson) =>
         ((root[key] as List?) ?? const [])
@@ -127,6 +133,7 @@ Future<RestoreSummary> restoreBackup(
     goals = parse('savingsGoals', SavingsGoal.fromJson);
     emis = parse('emis', Emi.fromJson);
     debts = parse('debts', Debt.fromJson);
+    pendingCaptures = parse('pendingCaptures', PendingCapture.fromJson);
   } catch (_) {
     throw BackupException('This backup file is damaged and can\'t be read.');
   }
@@ -169,6 +176,10 @@ Future<RestoreSummary> restoreBackup(
     goals: goals,
     emis: emis,
     debts: debts,
+    pendingCaptures: pendingCaptures,
+    accountOrder: ((root['accountOrder'] as List?) ?? const [])
+        .whereType<String>()
+        .toList(),
   );
   settings.applyBackup((root['settings'] as Map?) ?? const {});
 
@@ -178,7 +189,6 @@ Future<RestoreSummary> restoreBackup(
     photos: photosRestored,
   );
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Automatic on-device snapshots
@@ -201,12 +211,15 @@ Directory autoBackupDir(Directory documents) =>
 List<File> listAutoBackups(Directory documents) {
   final dir = autoBackupDir(documents);
   if (!dir.existsSync()) return const [];
-  final files = dir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.json'))
-      .toList()
-    ..sort((a, b) => b.path.compareTo(a.path)); // timestamped names sort by age
+  final files =
+      dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList()
+        ..sort(
+          (a, b) => b.path.compareTo(a.path),
+        ); // timestamped names sort by age
   return files;
 }
 
@@ -226,12 +239,14 @@ Future<File?> writeAutoBackup(
 
     final now = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    final stamp = '${now.year}${two(now.month)}${two(now.day)}'
+    final stamp =
+        '${now.year}${two(now.month)}${two(now.day)}'
         '-${two(now.hour)}${two(now.minute)}${two(now.second)}';
     final file = File('${dir.path}/expnd-$stamp.json');
 
     await file.writeAsString(
-        jsonEncode(buildBackup(store, settings, embedPhotos: false)));
+      jsonEncode(buildBackup(store, settings, embedPhotos: false)),
+    );
 
     for (final old in listAutoBackups(documents).skip(autoBackupKeep)) {
       try {

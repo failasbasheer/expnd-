@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/upcoming.dart';
+import '../services/insights.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
+import '../widgets/app_header.dart';
+import '../widgets/context_ai_coach.dart';
 import '../models/models.dart';
 import '../widgets/neopop.dart';
 import 'add_transaction.dart';
@@ -40,6 +43,7 @@ class UpcomingView extends StatelessWidget {
 
     final items = projectUpcoming(store);
     final summary = summarizeUpcoming(store, items);
+    final aiFacts = _upcomingAiFacts(items, summary, code);
     final groups = groupUpcomingByDay(items);
 
     // The rules behind the projections above. Managing them lives here rather
@@ -73,7 +77,7 @@ class UpcomingView extends StatelessWidget {
       child: Column(
         children: [
           FadeSlideIn(child: _titleBar(context, oc)),
-          if (items.isEmpty)
+          if (items.isEmpty && series.isEmpty)
             Expanded(child: _emptyState(oc))
           else
             Expanded(
@@ -90,9 +94,11 @@ class UpcomingView extends StatelessWidget {
                     child: _summaryCard(context, oc, summary, code),
                   ),
                   const SizedBox(height: 20),
+                  FadeSlideIn(index: 2, child: ContextAiCoach(facts: aiFacts)),
+                  const SizedBox(height: 20),
                   for (var g = 0; g < groups.length; g++)
                     FadeSlideIn(
-                      index: g + 2,
+                      index: g + 3,
                       child: _dayGroup(
                         context,
                         oc,
@@ -105,7 +111,7 @@ class UpcomingView extends StatelessWidget {
                   if (series.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     FadeSlideIn(
-                      index: groups.length + 2,
+                      index: groups.length + 3,
                       child: _seriesSection(context, oc, store, series, code),
                     ),
                   ],
@@ -117,59 +123,65 @@ class UpcomingView extends StatelessWidget {
     );
   }
 
+  List<Insight> _upcomingAiFacts(
+    List<UpcomingItem> items,
+    UpcomingSummary summary,
+    String code,
+  ) {
+    final safe = summary.safeToSpend;
+    final facts = <Insight>[
+      Insight(
+        title: 'Safe to spend is ${formatCurrency(safe, code)}',
+        detail: safe < 0
+            ? 'Committed bills exceed the cash available now'
+            : 'After bills committed through this month',
+        tone: safe < 0 ? InsightTone.warn : InsightTone.good,
+        icon: safe < 0
+            ? 'exclamationmark.triangle.fill'
+            : 'checkmark.circle.fill',
+        weight: 100,
+      ),
+      Insight(
+        title:
+            '${formatCurrency(summary.committedOutflows, code)} is committed',
+        detail:
+            '${formatCurrency(summary.expectedInflows, code)} expected in the next $kUpcomingHorizonDays days',
+        tone: InsightTone.neutral,
+        icon: 'calendar.badge.clock',
+        weight: 80,
+      ),
+    ];
+    if (items.isNotEmpty) {
+      final next = items.first;
+      facts.add(
+        Insight(
+          title: 'Next: ${next.title}',
+          detail:
+              '${formatCurrency(next.amount, code)} on ${_dayLabel(next.date)}',
+          tone: next.isInflow ? InsightTone.good : InsightTone.neutral,
+          icon: next.category.icon,
+          weight: 60,
+        ),
+      );
+    }
+    return facts;
+  }
+
   Widget _titleBar(BuildContext context, ExpndColors oc) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
-      child: Row(
-        children: [
-          if (Navigator.of(context).canPop())
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).maybePop(),
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Icon(sfIcon('chevron.left'), size: 18, color: oc.text),
-              ),
-            ),
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: ExpndColors.gold,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(sfIcon('calendar'), size: 12, color: ExpndColors.ink),
+    return ExpndHeader(
+      icon: 'calendar',
+      title: 'Upcoming',
+      actions: [
+        if (Navigator.of(context).canPop())
+          HeaderAction(
+            icon: 'xmark',
+            onPressed: () => Navigator.of(context).maybePop(),
+            semanticLabel: 'Close upcoming',
           ),
-          const SizedBox(width: 8),
-          // Expanded title takes all the slack so the trailing horizon label
-          // keeps its natural width instead of being squeezed to "NEXT 30 DA…".
-          Expanded(
-            child: Text(
-              'UPCOMING',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-                color: oc.text,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'NEXT $kUpcomingHorizonDays DAYS',
-            maxLines: 1,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-              color: oc.muted,
-            ),
-          ),
-        ],
+      ],
+      below: Text(
+        'Next $kUpcomingHorizonDays days',
+        style: TextStyle(fontSize: 12, color: oc.muted),
       ),
     );
   }
@@ -187,7 +199,7 @@ class UpcomingView extends StatelessWidget {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -198,7 +210,7 @@ class UpcomingView extends StatelessWidget {
               oc,
               'COMMITTED OUTFLOWS',
               formatCurrency(s.committedOutflows, code),
-              ExpndColors.red,
+              oc.negative,
             ),
             if (s.emiCommitted > 0) ...[
               const SizedBox(height: 4),
@@ -219,7 +231,7 @@ class UpcomingView extends StatelessWidget {
                 oc,
                 'EXPECTED INCOME',
                 formatCurrency(s.expectedInflows, code),
-                ExpndColors.green,
+                oc.positive,
               ),
             ],
             const SizedBox(height: 14),
@@ -229,7 +241,7 @@ class UpcomingView extends StatelessWidget {
               oc,
               'PROJECTED ${month.toUpperCase()} END',
               formatCurrency(s.projectedMonthEnd, code),
-              s.projectedMonthEnd < 0 ? ExpndColors.red : oc.text,
+              s.projectedMonthEnd < 0 ? oc.negative : oc.text,
             ),
             const SizedBox(height: 4),
             Text(
@@ -250,7 +262,7 @@ class UpcomingView extends StatelessWidget {
               oc,
               'SAFE TO SPEND',
               formatCurrency(s.safeToSpend, code),
-              s.safeToSpend < 0 ? ExpndColors.red : oc.accent,
+              s.safeToSpend < 0 ? oc.negative : oc.accent,
             ),
             const SizedBox(height: 4),
             Text(
@@ -281,20 +293,26 @@ class UpcomingView extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
               color: oc.muted,
             ),
           ),
         ),
         const SizedBox(width: 10),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.3,
-            color: valueColor,
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+                color: valueColor,
+              ),
+            ),
           ),
         ),
       ],
@@ -324,7 +342,7 @@ class UpcomingView extends StatelessWidget {
                   _dayLabel(group.day).toUpperCase(),
                   style: TextStyle(
                     fontSize: 10,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 1.4,
                     color: oc.muted,
                   ),
@@ -338,7 +356,7 @@ class UpcomingView extends StatelessWidget {
             faceColor: oc.surface,
             depthColor: oc.edge,
             borderColor: oc.border,
-            depth: 4,
+            depth: 0,
             cornerRadius: 6,
             child: Column(
               children: [
@@ -402,7 +420,7 @@ class UpcomingView extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1,
                 color: oc.text,
               ),
@@ -419,7 +437,7 @@ class UpcomingView extends StatelessWidget {
               'checkmark.circle.fill',
               'Post now',
               'Record it today and roll the schedule forward',
-              ExpndColors.green,
+              oc.positive,
               () {
                 store.postRecurringNow(source);
                 Haptics.success();
@@ -510,7 +528,7 @@ class UpcomingView extends StatelessWidget {
                 'RECURRING RULES',
                 style: TextStyle(
                   fontSize: 10,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.4,
                   color: oc.muted,
                 ),
@@ -524,7 +542,7 @@ class UpcomingView extends StatelessWidget {
           faceColor: oc.surface,
           depthColor: oc.edge,
           borderColor: oc.border,
-          depth: 4,
+          depth: 0,
           cornerRadius: 6,
           child: Column(
             children: [
@@ -619,8 +637,8 @@ class UpcomingView extends StatelessWidget {
               '${isIncome ? "+" : "−"}${formatCurrency(t.amount, code)}',
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
-                color: isIncome ? ExpndColors.green : oc.text,
+                fontWeight: FontWeight.w700,
+                color: isIncome ? oc.positive : oc.text,
               ),
             ),
             const SizedBox(width: 4),
@@ -644,7 +662,7 @@ class UpcomingView extends StatelessWidget {
               'NOTHING SCHEDULED',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.6,
                 color: oc.muted,
               ),
@@ -701,7 +719,7 @@ class UpcomingRow extends StatelessWidget {
         : item.category.color;
     final account = store.accountFor(item.accountId);
 
-    final amountColor = item.isInflow ? ExpndColors.green : oc.text;
+    final amountColor = item.isInflow ? oc.positive : oc.text;
     final sign = item.isInflow ? '+' : '−';
 
     final content = Padding(
@@ -761,31 +779,37 @@ class UpcomingRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$sign${formatCurrency(item.amount, code)}',
-                style: TextStyle(
-                  fontSize: dense ? 12 : 13.5,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.2,
-                  color: amountColor,
-                ),
-              ),
-              if (dense) ...[
-                const SizedBox(height: 2),
-                Text(
-                  _shortDay(item.date),
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: oc.muted,
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$sign${formatCurrency(item.amount, code)}',
+                    style: TextStyle(
+                      fontSize: dense ? 12 : 13.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      color: amountColor,
+                    ),
                   ),
-                ),
-              ],
-            ],
+                  if (dense) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      _shortDay(item.date),
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: oc.muted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
           if (onTap != null && !dense) ...[
             const SizedBox(width: 4),

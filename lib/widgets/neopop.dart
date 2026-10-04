@@ -20,9 +20,9 @@ class NeoPopElevated extends StatelessWidget {
     this.faceColor,
     this.depthColor,
     this.borderColor,
-    this.depth = 5,
+    this.depth = 0,
     this.cornerRadius = ExpndRadius.card,
-    this.borderWidth = 1.5,
+    this.borderWidth = 1,
   });
 
   @override
@@ -89,14 +89,14 @@ class NeoPopButton extends StatefulWidget {
     required this.onPressed,
     Color? faceColor,
     Color? depthColor,
-    this.depth = 5,
+    this.depth = 2,
     this.cornerRadius = ExpndRadius.button,
     this.shine = false,
     this.shineColor,
     this.enabled = true,
     this.borderColor,
-  })  : faceColor = faceColor ?? ExpndColors.gold,
-        depthColor = depthColor ?? ExpndColors.goldDark;
+  }) : faceColor = faceColor ?? ExpndColors.gold,
+       depthColor = depthColor ?? ExpndColors.goldDark;
 
   @override
   State<NeoPopButton> createState() => _NeoPopButtonState();
@@ -135,7 +135,9 @@ class _NeoPopButtonState extends State<NeoPopButton> {
                 offset: Offset(d, d),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                      color: widget.depthColor, borderRadius: radius),
+                    color: widget.depthColor,
+                    borderRadius: radius,
+                  ),
                 ),
               ),
             ),
@@ -148,19 +150,22 @@ class _NeoPopButtonState extends State<NeoPopButton> {
                 child: Container(
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                      color: widget.faceColor,
-                      borderRadius: radius,
-                      border: widget.borderColor != null
-                          ? Border.all(color: widget.borderColor!, width: 1.5)
-                          : null),
+                    color: widget.faceColor,
+                    borderRadius: radius,
+                    border: widget.borderColor != null
+                        ? Border.all(color: widget.borderColor!, width: 1.5)
+                        : null,
+                  ),
                   child: Stack(
                     children: [
                       widget.child,
                       if (widget.shine)
                         Positioned.fill(
                           child: NeoPopShine(
-                              color: widget.shineColor ??
-                                  Colors.white.withValues(alpha: 0.22)),
+                            color:
+                                widget.shineColor ??
+                                Colors.white.withValues(alpha: 0.22),
+                          ),
                         ),
                     ],
                   ),
@@ -232,10 +237,12 @@ class NeoPopTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-          color: bg, borderRadius: BorderRadius.circular(cornerRadius)),
+        color: bg,
+        borderRadius: BorderRadius.circular(cornerRadius),
+      ),
       child: Text(
         text,
-        style: ExpndType.label(fg).copyWith(fontSize: 10, letterSpacing: 1.5),
+        style: ExpndType.label(fg).copyWith(fontSize: 11, letterSpacing: 0.2),
       ),
     );
   }

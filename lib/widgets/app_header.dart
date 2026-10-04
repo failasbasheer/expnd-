@@ -2,30 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
-import 'neopop.dart';
 
-/// One header, worn by every tab.
-///
-/// Each tab used to invent its own top: the dashboard had no title at all (it
-/// opened straight into an elevated month card), analytics had a gold icon
-/// chip, wallet and profile had bare text, and only wallet carried an action —
-/// a labelled "+ ADD" button that sat at a different height to everything else.
-/// Switching tabs moved the top line around. The grammar is fixed here so it
-/// can't drift again:
-///
-///     [chip] TITLE .................. [action] [action]
-///     ( optional second row — e.g. the month strip )
-///     ─────────────────────────────────────────────────  hairline
-///
-/// The chip carries the same glyph as that tab's tab-bar icon, so the top of
-/// the screen and the bottom of the screen agree on where you are.
+/// Shared page title and actions. Optional context controls sit below the title.
 class ExpndHeader extends StatelessWidget {
-  /// SF Symbol name for the identity chip. Ignored when [leading] is supplied.
+  /// Optional identity metadata; titles do not repeat the navigation icon.
   final String? icon;
   final String? title;
 
-  /// Replaces the chip + title block. The dashboard passes its once-a-day
-  /// greeting here, which crossfades against the wordmark.
+  /// Replaces the standard title block.
   final Widget? leading;
 
   /// Right-hand controls, in reading order. Use [HeaderAction].
@@ -41,22 +25,26 @@ class ExpndHeader extends StatelessWidget {
     this.leading,
     this.actions = const [],
     this.below,
-  }) : assert(leading != null || (icon != null && title != null),
-            'a header needs either a leading block or an icon + title');
+  }) : assert(
+         leading != null || title != null,
+         'a header needs either a leading block or a title',
+       );
 
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: oc.border, width: 1)),
-      ),
+    return ColoredBox(
+      color: oc.bg,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
-                ExpndHeaderMetrics.gutter, 6, ExpndHeaderMetrics.gutter, 6),
+              ExpndHeaderMetrics.gutter,
+              12,
+              ExpndHeaderMetrics.gutter,
+              12,
+            ),
             child: Row(
               children: [
                 // Expanded + Align, not Flexible + Spacer: those are both
@@ -68,18 +56,22 @@ class ExpndHeader extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: leading ?? HeaderTitle(icon: icon!, title: title!),
+                    child: leading ?? HeaderTitle(title: title!),
                   ),
                 ),
-                for (final a in actions) ...[const SizedBox(width: 8), a],
+                for (final a in actions) ...[const SizedBox(width: 4), a],
               ],
             ),
           ),
           if (below != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  ExpndHeaderMetrics.gutter, 0, ExpndHeaderMetrics.gutter, 6),
-              child: below!,
+                ExpndHeaderMetrics.gutter,
+                0,
+                ExpndHeaderMetrics.gutter,
+                8,
+              ),
+              child: Align(alignment: Alignment.centerLeft, child: below!),
             ),
         ],
       ),
@@ -93,77 +85,43 @@ class ExpndHeaderMetrics {
   /// Side padding — matches the 16pt gutter the screens' lists already use.
   static const double gutter = 16;
 
-  /// The identity chip. A label, not a target, so it stays small.
-  static const double chip = 28;
-
-  /// Action face. Larger than the chip because this one is actually tapped.
-  static const double action = 36;
-
-  /// neoPOP depth reserved under a primary action, so primary and secondary
-  /// actions line their faces up.
-  static const double actionDepth = 2;
+  /// Minimum touch target for every header action.
+  static const double action = 44;
 
   /// Corner radius for header furniture — chips and actions alike.
-  static const double radius = 6;
+  static const double radius = 12;
 }
 
-/// The gold identity chip: the tab's tab-bar glyph on a gold square.
-class HeaderChip extends StatelessWidget {
-  final String icon;
-  const HeaderChip(this.icon, {super.key});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: ExpndHeaderMetrics.chip,
-        height: ExpndHeaderMetrics.chip,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: ExpndColors.gold,
-          borderRadius: BorderRadius.circular(ExpndHeaderMetrics.radius),
-        ),
-        child: Icon(sfIcon(icon), size: 13, color: ExpndColors.ink),
-      );
-}
-
-/// Chip + title, the default leading block.
+/// The shared page-title style.
 class HeaderTitle extends StatelessWidget {
-  final String icon;
   final String title;
-  const HeaderTitle({super.key, required this.icon, required this.title});
+  const HeaderTitle({super.key, required this.title});
 
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        HeaderChip(icon),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              color: oc.text,
-            ),
-          ),
+    final displayTitle = title == 'EXPND' || title.isEmpty
+        ? title
+        : '${title[0]}${title.substring(1).toLowerCase()}';
+    return Semantics(
+      header: true,
+      child: Text(
+        displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.5,
+          color: oc.text,
         ),
-      ],
+      ),
     );
   }
 }
 
-/// A square header control.
+/// A 44-point header action with a quiet optional primary tint.
 ///
-/// [primary] is the tab's own main action and gets the gold neoPOP face with a
-/// real press; everything else is a quiet outlined square. Icon-only on
-/// purpose: a labelled button in the header competes with the title beside it,
-/// and at these sizes the label is what forces the button out of alignment
-/// with its neighbours.
 class HeaderAction extends StatelessWidget {
   final String? icon;
   final VoidCallback? onPressed;
@@ -192,59 +150,38 @@ class HeaderAction extends StatelessWidget {
     required this.child,
     required this.semanticLabel,
     this.badge = false,
-  })  : icon = null,
-        onPressed = null,
-        primary = false;
+  }) : icon = null,
+       onPressed = null,
+       primary = false;
 
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
     const size = ExpndHeaderMetrics.action;
-    const depth = ExpndHeaderMetrics.actionDepth;
-
-    Widget face;
-    if (primary) {
-      face = NeoPopButton(
-        onPressed: onPressed ?? () {},
-        depth: depth,
-        cornerRadius: ExpndHeaderMetrics.radius,
-        // The gold face dissolves into the near-white light background without
-        // a hairline, exactly as the FAB does.
-        borderColor: Theme.of(context).brightness == Brightness.light
-            ? ExpndColors.ink.withValues(alpha: 0.85)
-            : null,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Icon(sfIcon(icon!), size: 15, color: ExpndColors.ink),
-        ),
-      );
-    } else {
-      // Padded to the same footprint a primary action occupies, so the faces
-      // line up whichever kind of action a tab uses.
-      face = Padding(
-        padding: const EdgeInsets.only(right: depth, bottom: depth),
-        child: Container(
-          width: size,
-          height: size,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: oc.surface,
-            borderRadius: BorderRadius.circular(ExpndHeaderMetrics.radius),
-            border: Border.all(color: oc.border, width: 1),
+    Widget face = SizedBox(
+      width: size,
+      height: size,
+      child:
+          child ??
+          IconButton(
+            onPressed: onPressed,
+            style: IconButton.styleFrom(
+              foregroundColor: primary ? oc.accent : oc.muted,
+              backgroundColor: primary
+                  ? oc.accent.withValues(alpha: 0.10)
+                  : Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: EdgeInsets.zero,
+            ),
+            icon: Icon(switch (icon) {
+              'plus' => Icons.add_rounded,
+              'xmark' => Icons.close_rounded,
+              _ => sfIcon(icon!),
+            }, size: 22),
           ),
-          child: child ?? Icon(sfIcon(icon!), size: 15, color: oc.muted),
-        ),
-      );
-      // A custom child brings its own gesture; a plain icon needs one.
-      if (child == null) {
-        face = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onPressed,
-          child: face,
-        );
-      }
-    }
+    );
 
     if (badge) {
       face = Stack(
@@ -252,8 +189,8 @@ class HeaderAction extends StatelessWidget {
         children: [
           face,
           Positioned(
-            right: 0,
-            top: -1,
+            right: 5,
+            top: 4,
             child: Container(
               width: 7,
               height: 7,
@@ -268,6 +205,33 @@ class HeaderAction extends StatelessWidget {
       );
     }
 
-    return Semantics(button: true, label: semanticLabel, child: face);
+    return Tooltip(
+      message: semanticLabel,
+      excludeFromSemantics: true,
+      child: Semantics(button: true, label: semanticLabel, child: face),
+    );
   }
+}
+
+/// Uses the same title/action geometry on a Scaffold's app bar as on main tabs.
+class ExpndPageBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final List<Widget> actions;
+  const ExpndPageBar({super.key, required this.title, this.actions = const []});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(68);
+
+  @override
+  Widget build(BuildContext context) => AppBar(
+    automaticallyImplyLeading: false,
+    toolbarHeight: preferredSize.height,
+    titleSpacing: ExpndHeaderMetrics.gutter,
+    title: HeaderTitle(title: title),
+    actions: [
+      for (final action in actions)
+        Padding(padding: const EdgeInsets.only(left: 4), child: action),
+      const SizedBox(width: ExpndHeaderMetrics.gutter),
+    ],
+  );
 }

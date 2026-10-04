@@ -27,8 +27,8 @@ class _LockScreenState extends State<LockScreen> {
   String get _methodLabel => _useFace
       ? 'Face ID'
       : Platform.isIOS
-          ? 'Touch ID'
-          : 'Fingerprint';
+      ? 'Touch ID'
+      : 'Fingerprint';
   String get _methodIcon => _useFace ? 'faceid' : 'touchid';
 
   @override
@@ -59,7 +59,9 @@ class _LockScreenState extends State<LockScreen> {
       }
       final ok = await _auth.authenticate(
         localizedReason: 'Unlock XPND Finance',
-        biometricOnly: true,
+        // Allow the device passcode as a recovery path after biometric
+        // lockout or a temporarily unavailable sensor.
+        biometricOnly: false,
       );
       if (!mounted) return;
       if (ok) {
@@ -120,12 +122,14 @@ class _LockScreenState extends State<LockScreen> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: Text(
-                          _error ?? 'Authentication failed. Try again.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: ExpndColors.red)),
+                        _error ?? 'Authentication failed. Try again.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: ExpndColors.red,
+                        ),
+                      ),
                     ),
                   NeoPopButton(
                     onPressed: _authenticate,
@@ -140,16 +144,20 @@ class _LockScreenState extends State<LockScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(sfIcon(_methodIcon),
-                                size: 18, color: ExpndColors.ink),
+                            Icon(
+                              sfIcon(_methodIcon),
+                              size: 18,
+                              color: ExpndColors.ink,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               'Unlock with $_methodLabel',
                               style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.5,
-                                  color: ExpndColors.ink),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                                color: ExpndColors.ink,
+                              ),
                             ),
                           ],
                         ),

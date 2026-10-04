@@ -44,11 +44,12 @@ void main() {
   group('monthlyAmount', () {
     test('matches the closed-form EMI formula', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Car',
-          principal: 500000,
-          annualRate: 12,
-          tenureMonths: 60);
+        accountId: 'a',
+        name: 'Car',
+        principal: 500000,
+        annualRate: 12,
+        tenureMonths: 60,
+      );
 
       const r = 12 / 12 / 100; // 1% a month
       final f = math.pow(1 + r, 60).toDouble();
@@ -61,22 +62,24 @@ void main() {
 
     test('a zero-interest loan is just principal split evenly', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Phone',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 12);
+        accountId: 'a',
+        name: 'Phone',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 12,
+      );
       expect(e.monthlyAmount, closeTo(100, 0.0001));
       expect(e.totalInterest, closeTo(0, 0.0001));
     });
 
     test('a zero tenure never divides by zero', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Bad',
-          principal: 1000,
-          annualRate: 10,
-          tenureMonths: 0);
+        accountId: 'a',
+        name: 'Bad',
+        principal: 1000,
+        annualRate: 10,
+        tenureMonths: 0,
+      );
       expect(e.monthlyAmount, 0);
       expect(e.outstandingPrincipal, 0);
       expect(e.progress, 0);
@@ -86,11 +89,12 @@ void main() {
   group('interest', () {
     test('total payable exceeds principal by the interest', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Car',
-          principal: 500000,
-          annualRate: 12,
-          tenureMonths: 60);
+        accountId: 'a',
+        name: 'Car',
+        principal: 500000,
+        annualRate: 12,
+        tenureMonths: 60,
+      );
       expect(e.totalPayable, closeTo(e.monthlyAmount * 60, 0.01));
       expect(e.totalInterest, closeTo(e.totalPayable - 500000, 0.01));
       // Borrowing 5L at 12% for 5 years costs roughly 1.67L in interest.
@@ -99,11 +103,12 @@ void main() {
 
     test('a higher rate costs more interest for the same principal', () {
       Emi at(double rate) => Emi(
-          accountId: 'a',
-          name: 'L',
-          principal: 100000,
-          annualRate: rate,
-          tenureMonths: 24);
+        accountId: 'a',
+        name: 'L',
+        principal: 100000,
+        annualRate: rate,
+        tenureMonths: 24,
+      );
       expect(at(18).totalInterest, greaterThan(at(9).totalInterest));
     });
   });
@@ -111,12 +116,13 @@ void main() {
   group('progress', () {
     test('counts whole elapsed months and clamps to the tenure', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Phone',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 12,
-          startDate: monthsAgo(3));
+        accountId: 'a',
+        name: 'Phone',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 12,
+        startDate: monthsAgo(3),
+      );
       expect(e.monthsPaid, 3);
       expect(e.monthsRemaining, 9);
       expect(e.progress, closeTo(0.25, 0.0001));
@@ -125,12 +131,13 @@ void main() {
 
     test('a finished loan reports no remaining months and is inactive', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Old',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 6,
-          startDate: monthsAgo(24));
+        accountId: 'a',
+        name: 'Old',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 6,
+        startDate: monthsAgo(24),
+      );
       expect(e.monthsPaid, 6, reason: 'clamped to the tenure, not 24');
       expect(e.monthsRemaining, 0);
       expect(e.progress, 1.0);
@@ -140,12 +147,13 @@ void main() {
     test('a future-dated loan has not started paying', () {
       final now = DateTime.now();
       final e = Emi(
-          accountId: 'a',
-          name: 'Soon',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 12,
-          startDate: DateTime(now.year, now.month + 1, 1));
+        accountId: 'a',
+        name: 'Soon',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 12,
+        startDate: DateTime(now.year, now.month + 1, 1),
+      );
       expect(e.monthsPaid, 0);
       expect(e.progress, 0);
     });
@@ -154,12 +162,13 @@ void main() {
   group('outstandingPrincipal', () {
     test('starts at the full principal and ends at zero', () {
       Emi at(int elapsed) => Emi(
-          accountId: 'a',
-          name: 'Car',
-          principal: 500000,
-          annualRate: 12,
-          tenureMonths: 60,
-          startDate: monthsAgo(elapsed));
+        accountId: 'a',
+        name: 'Car',
+        principal: 500000,
+        annualRate: 12,
+        tenureMonths: 60,
+        startDate: monthsAgo(elapsed),
+      );
 
       expect(at(0).outstandingPrincipal, closeTo(500000, 1));
       expect(at(60).outstandingPrincipal, closeTo(0, 1));
@@ -167,12 +176,13 @@ void main() {
 
     test('matches the standard balance formula part-way through', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Car',
-          principal: 500000,
-          annualRate: 12,
-          tenureMonths: 60,
-          startDate: monthsAgo(12));
+        accountId: 'a',
+        name: 'Car',
+        principal: 500000,
+        annualRate: 12,
+        tenureMonths: 60,
+        startDate: monthsAgo(12),
+      );
 
       const r = 0.01;
       final full = math.pow(1 + r, 60).toDouble();
@@ -184,24 +194,26 @@ void main() {
 
     test('falls only slowly at first — interest front-loads', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Car',
-          principal: 500000,
-          annualRate: 12,
-          tenureMonths: 60,
-          startDate: monthsAgo(12));
+        accountId: 'a',
+        name: 'Car',
+        principal: 500000,
+        annualRate: 12,
+        tenureMonths: 60,
+        startDate: monthsAgo(12),
+      );
       // A fifth of the term is done, but well over a fifth is still owed.
       expect(e.outstandingPrincipal, greaterThan(500000 * 0.8));
     });
 
     test('a zero-interest loan pays principal down evenly', () {
       final e = Emi(
-          accountId: 'a',
-          name: 'Phone',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 12,
-          startDate: monthsAgo(3));
+        accountId: 'a',
+        name: 'Phone',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 12,
+        startDate: monthsAgo(3),
+      );
       expect(e.outstandingPrincipal, closeTo(900, 0.01));
     });
   });
@@ -214,15 +226,20 @@ void main() {
     setUp(() {
       store = AppStore(_FakeBox());
       bank = Account(
-          name: 'HDFC', type: AccountType.bank, currencyCode: 'USD', balance: 10000);
+        name: 'HDFC',
+        type: AccountType.bank,
+        currencyCode: 'USD',
+        balance: 10000,
+      );
       store.addAccount(bank);
       loan = Emi(
-          accountId: 'card',
-          name: 'iPhone',
-          principal: 1200,
-          annualRate: 0,
-          tenureMonths: 12,
-          startDate: monthsAgo(2));
+        accountId: 'card',
+        name: 'iPhone',
+        principal: 1200,
+        annualRate: 0,
+        tenureMonths: 12,
+        startDate: monthsAgo(2),
+      );
       store.addEmi(loan);
     });
 
@@ -247,10 +264,16 @@ void main() {
       expect(store.installmentsOn(loan), isEmpty);
       expect(store.paidOn(loan), 0);
 
-      store.payEmiInstallment(loan,
-          accountId: bank.id, date: DateTime(2026, 1, 10));
-      store.payEmiInstallment(loan,
-          accountId: bank.id, date: DateTime(2026, 2, 10));
+      store.payEmiInstallment(
+        loan,
+        accountId: bank.id,
+        date: DateTime(2026, 1, 10),
+      );
+      store.payEmiInstallment(
+        loan,
+        accountId: bank.id,
+        date: DateTime(2026, 2, 10),
+      );
 
       expect(store.installmentsOn(loan).length, 2);
       expect(store.paidOn(loan), closeTo(200, 0.01));

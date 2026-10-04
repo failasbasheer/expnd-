@@ -7,7 +7,7 @@
     android:background="@drawable/expnd_widget_bg"
     android:padding="16dp">
 
-    <!-- Header: net worth + quick-add -->
+    <!-- Header: left to spend (or month spend) + quick-add -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -24,7 +24,7 @@
                 android:id="@+id/widget_net_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="NET WORTH"
+                android:text="LEFT TO SPEND"
                 android:textColor="@color/widget_muted"
                 android:textSize="10sp"
                 android:letterSpacing="0.08"

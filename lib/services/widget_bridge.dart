@@ -72,46 +72,83 @@ class WidgetBridge {
     final code = settings.currencyCode;
     final now = DateTime.now();
 
-    final netWorth =
-        store.accounts.fold<double>(0, (sum, a) => sum + store.balanceFor(a));
+    final monthSpent = store.spentInMonth(now);
 
-    final monthSpent = store.transactions
-        .where((t) =>
-            t.type == TransactionType.expense &&
-            t.date.year == now.year &&
-            t.date.month == now.month)
-        .fold<double>(0, (sum, t) => sum + t.amount);
-
-    final budget = settings.monthlyBudget;
+    // Same effective limit as the Plan gauge: base budget plus last month's
+    // leftover when rollover is on. The widget leads with what's left rather
+    // than net worth, which is too revealing on a glanceable Home Screen.
+    final base = settings.monthlyBudget;
+    final budget = settings.budgetRollover && base > 0
+        ? store.rolledOverLimit(base, now)
+        : base;
     final ratio = budget > 0 ? (monthSpent / budget).clamp(0.0, 1.0) : -1.0;
+    final left = budget - monthSpent;
 
     final recent = store.transactions.take(3).toList();
+
+    // What the Quick Log widget needs to draw its buttons. Presets go over as
+    // a plain comma list because the native side only ever parses them back
+    // into doubles, and repeat-last carries the raw amount rather than a
+    // formatted string — the widget re-reads it at tap time so a stale
+    // timeline can never log a number the user has moved past.
+    final presets = settings.quickCapturePresets;
+    final expenses = store.transactions.where(
+      (t) => t.type == TransactionType.expense,
+    );
+    final lastExpense = expenses.isEmpty ? null : expenses.first;
 
     try {
       await Future.wait([
         HomeWidget.saveWidgetData('has_data', store.accounts.isNotEmpty),
         HomeWidget.saveWidgetData('currency', code),
         HomeWidget.saveWidgetData('symbol', currencySymbol(code)),
-        HomeWidget.saveWidgetData('net_worth', formatCurrency(netWorth, code, maskable: false)),
         HomeWidget.saveWidgetData(
-            'month_label', _monthName(now.month).toUpperCase()),
+          'left_to_spend',
+          budget > 0 ? formatCurrency(left.abs(), code, maskable: true) : '',
+        ),
+        HomeWidget.saveWidgetData('over_budget', budget > 0 && left < 0),
         HomeWidget.saveWidgetData(
-            'month_spent', formatCurrency(monthSpent, code, maskable: false)),
+          'month_label',
+          _monthName(now.month).toUpperCase(),
+        ),
         HomeWidget.saveWidgetData(
-            'budget_ratio', ratio < 0 ? -1 : (ratio * 100).round()),
+          'month_spent',
+          formatCurrency(monthSpent, code, maskable: true),
+        ),
         HomeWidget.saveWidgetData(
-            'budget_text',
-            budget > 0
-                ? 'of ${formatCurrency(budget, code, maskable: false)}'
-                : ''),
+          'budget_ratio',
+          ratio < 0 ? -1 : (ratio * 100).round(),
+        ),
+        HomeWidget.saveWidgetData(
+          'budget_text',
+          budget > 0
+              ? 'of ${formatCurrency(budget, code, maskable: true)}'
+              : '',
+        ),
         HomeWidget.saveWidgetData('tx_count', recent.length),
         for (var i = 0; i < recent.length; i++) ...[
           HomeWidget.saveWidgetData('tx${i}_note', _label(recent[i], store)),
           HomeWidget.saveWidgetData(
-              'tx${i}_amount', _signedAmount(recent[i], code)),
+            'tx${i}_amount',
+            _signedAmount(recent[i], code),
+          ),
           HomeWidget.saveWidgetData(
-              'tx${i}_positive', recent[i].type == TransactionType.income),
+            'tx${i}_positive',
+            recent[i].type == TransactionType.income,
+          ),
         ],
+        HomeWidget.saveWidgetData(
+          'presets',
+          presets.map((p) => p.toString()).join(','),
+        ),
+        HomeWidget.saveWidgetData(
+          'last_expense_amount',
+          lastExpense?.amount ?? 0.0,
+        ),
+        HomeWidget.saveWidgetData(
+          'last_expense_note',
+          lastExpense == null ? '' : _label(lastExpense, store),
+        ),
         HomeWidget.saveWidgetData('updated', now.millisecondsSinceEpoch),
       ]);
 
@@ -149,17 +186,17 @@ class WidgetBridge {
   }
 
   static String _monthName(int m) => const [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December',
-      ][m - 1];
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ][m - 1];
 }

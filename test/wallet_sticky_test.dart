@@ -27,8 +27,7 @@ class _FakeBox implements Box {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-Account _acct(String name, AccountType type, double balance,
-        {double? limit}) =>
+Account _acct(String name, AccountType type, double balance, {double? limit}) =>
     Account(
       name: name,
       type: type,
@@ -43,19 +42,22 @@ Future<AppStore> _seeded() async {
   store.addAccount(_acct('Emergency Fund', AccountType.savings, 11200));
   store.addAccount(_acct('Pocket Cash', AccountType.cash, 320));
   store.addAccount(
-      _acct('ICICI Amazon Pay', AccountType.credit, 1840, limit: 15000));
+    _acct('ICICI Amazon Pay', AccountType.credit, 1840, limit: 15000),
+  );
   // The bar only matters when there's enough below the deck to scroll past it,
   // so give the selected account a real transaction list.
   final first = store.accounts.first;
   for (var i = 0; i < 20; i++) {
-    store.addTransaction(Transaction(
-      note: 'Spend $i',
-      amount: 20.0 + i,
-      category: TransactionCategory.groceries,
-      type: TransactionType.expense,
-      date: DateTime(2026, 7, 20 - (i % 19)),
-      accountId: first.id,
-    ));
+    store.addTransaction(
+      Transaction(
+        note: 'Spend $i',
+        amount: 20.0 + i,
+        category: TransactionCategory.groceries,
+        type: TransactionType.expense,
+        date: DateTime(2026, 7, 20 - (i % 19)),
+        accountId: first.id,
+      ),
+    );
   }
   return store;
 }
@@ -106,26 +108,32 @@ void main() {
     final store = await _seeded();
     await _pumpWallet(tester, store);
 
-    expect(_barVisible(tester), isFalse,
-        reason: 'the deck is visible, so the bar would be redundant');
+    expect(
+      _barVisible(tester),
+      isFalse,
+      reason: 'the deck is visible, so the bar would be redundant',
+    );
   });
 
   testWidgets('appears once the deck scrolls out of view', (tester) async {
     final store = await _seeded();
     await _pumpWallet(tester, store);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
     await tester.pumpAndSettle();
 
-    expect(_barVisible(tester), isTrue,
-        reason: 'the deck is gone, so the details below need an owner');
+    expect(
+      _barVisible(tester),
+      isTrue,
+      reason: 'the deck is gone, so the details below need an owner',
+    );
   });
 
   testWidgets('names the account at the front of the deck', (tester) async {
     final store = await _seeded();
     await _pumpWallet(tester, store);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
     await tester.pumpAndSettle();
 
     // The first account is selected by default, so it is what the bar claims.
@@ -136,14 +144,17 @@ void main() {
     final store = await _seeded();
     await _pumpWallet(tester, store);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
     await tester.pumpAndSettle();
     expect(_barVisible(tester), isTrue);
 
-    await tester.drag(find.byType(ListView), const Offset(0, 900));
+    await tester.drag(find.byType(ListView), const Offset(0, 1400));
     await tester.pumpAndSettle();
-    expect(_barVisible(tester), isFalse,
-        reason: 'the deck is back, so the bar should get out of the way');
+    expect(
+      _barVisible(tester),
+      isFalse,
+      reason: 'the deck is back, so the bar should get out of the way',
+    );
   });
 
   testWidgets('an empty wallet never shows the bar', (tester) async {

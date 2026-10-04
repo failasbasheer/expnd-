@@ -29,17 +29,23 @@ void main() {
 
   AppStore store() => AppStore(_FakeBox());
 
-  void add(AppStore s, double amount, int day,
-      {TransactionType type = TransactionType.expense,
-      TransactionCategory cat = TransactionCategory.food,
-      String note = ''}) {
-    s.addTransaction(Transaction(
-      note: note,
-      amount: amount,
-      category: cat,
-      type: type,
-      date: DateTime(2026, 6, day),
-    ));
+  void add(
+    AppStore s,
+    double amount,
+    int day, {
+    TransactionType type = TransactionType.expense,
+    TransactionCategory cat = TransactionCategory.food,
+    String note = '',
+  }) {
+    s.addTransaction(
+      Transaction(
+        note: note,
+        amount: amount,
+        category: cat,
+        type: type,
+        date: DateTime(2026, 6, day),
+      ),
+    );
   }
 
   String run(AppStore s) =>
@@ -82,12 +88,14 @@ void main() {
   test('only counts the month asked for', () {
     final s = store();
     add(s, 100, 5);
-    s.addTransaction(Transaction(
-      amount: 9999,
-      category: TransactionCategory.food,
-      type: TransactionType.expense,
-      date: DateTime(2026, 5, 20), // the month before
-    ));
+    s.addTransaction(
+      Transaction(
+        amount: 9999,
+        category: TransactionCategory.food,
+        type: TransactionType.expense,
+        date: DateTime(2026, 5, 20), // the month before
+      ),
+    );
     expect(run(s), isNot(contains('9,999')));
   });
 
@@ -118,16 +126,24 @@ void main() {
     final s = store();
     add(s, 40, 3, note: 'A' * 90);
     for (final line in run(s).split('\n')) {
-      expect(line.length, lessThanOrEqualTo(48),
-          reason: 'columns must stay aligned in a monospaced viewer');
+      expect(
+        line.length,
+        lessThanOrEqualTo(48),
+        reason: 'columns must stay aligned in a monospaced viewer',
+      );
     }
   });
 
   test('carries the name when there is one', () {
     final s = store();
     add(s, 40, 3);
-    final out = buildMonthlyStatement(s, 'USD', june,
-        userName: 'Failas', generatedAt: generated);
+    final out = buildMonthlyStatement(
+      s,
+      'USD',
+      june,
+      userName: 'Failas',
+      generatedAt: generated,
+    );
     expect(out, contains('Failas'));
     expect(out, contains('June 2026'));
   });

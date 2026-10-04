@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import org.gradle.api.tasks.compile.JavaCompile
 
 plugins {
     id("com.android.application")
@@ -23,6 +24,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications (and other plugins using java.time)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -67,4 +70,31 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Enables core library desugaring required by flutter_local_notifications.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+// integration_test is intentionally a dev dependency, but older Flutter
+// tooling still emits it in GeneratedPluginRegistrant.java for release builds.
+// Remove only that optional registration before compiling release variants;
+// debug/integration-test builds keep the plugin available.
+tasks.withType<JavaCompile>().configureEach {
+    if (name.contains("Release", ignoreCase = true)) {
+        doFirst {
+            val registrant = project.file(
+                "src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
+            )
+            if (registrant.exists()) {
+                val source = registrant.readText()
+                val cleaned = source.replace(
+                    Regex("""(?s)\n\s*try \{\s*flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\s*\} catch \(Exception e\) \{\s*Log\.e\(TAG, "Error registering plugin integration_test[^;]*;\s*\}\s*"""),
+                    "\n"
+                )
+                if (cleaned != source) registrant.writeText(cleaned)
+            }
+        }
+    }
 }

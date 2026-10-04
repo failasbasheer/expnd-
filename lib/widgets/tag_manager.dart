@@ -35,20 +35,30 @@ Future<void> showTagManager(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 16),
-          Text('#${tag.toUpperCase()}',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1,
-                  color: oc.text)),
+          Text(
+            '#${tag.toUpperCase()}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+              color: oc.text,
+            ),
+          ),
           const SizedBox(height: 3),
           Text(
-              '$count transaction${count == 1 ? '' : 's'} · '
-              '${formatCurrency(store.spentOnTag(tag), code)}',
-              style: TextStyle(fontSize: 11, color: oc.muted)),
+            '$count transaction${count == 1 ? '' : 's'} · '
+            '${formatCurrency(store.spentOnTag(tag), code)}',
+            style: TextStyle(fontSize: 11, color: oc.muted),
+          ),
           const SizedBox(height: 14),
           _actionRow(sheetCtx, 'pencil', 'Rename tag', 'rename', oc.text),
-          _actionRow(sheetCtx, 'trash', 'Delete tag', 'delete', ExpndColors.red),
+          _actionRow(
+            sheetCtx,
+            'trash',
+            'Delete tag',
+            'delete',
+            ExpndColors.red,
+          ),
           const SizedBox(height: 10),
         ],
       ),
@@ -62,8 +72,13 @@ Future<void> showTagManager(
   }
 }
 
-Widget _actionRow(BuildContext sheetCtx, String icon, String label, String value,
-    Color color) {
+Widget _actionRow(
+  BuildContext sheetCtx,
+  String icon,
+  String label,
+  String value,
+  Color color,
+) {
   return GestureDetector(
     behavior: HitTestBehavior.opaque,
     onTap: () {
@@ -78,17 +93,26 @@ Widget _actionRow(BuildContext sheetCtx, String icon, String label, String value
         children: [
           Icon(sfIcon(icon), size: 16, color: color),
           const SizedBox(width: 14),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ],
       ),
     ),
   );
 }
 
-Future<void> _renameSheet(BuildContext context, AppStore store, String tag,
-    void Function(String)? onRenamed) async {
+Future<void> _renameSheet(
+  BuildContext context,
+  AppStore store,
+  String tag,
+  void Function(String)? onRenamed,
+) async {
   final oc = context.oc;
   final ctrl = TextEditingController(text: tag);
   final result = await showModalBottomSheet<String>(
@@ -108,17 +132,23 @@ Future<void> _renameSheet(BuildContext context, AppStore store, String tag,
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: oc.border, borderRadius: BorderRadius.circular(2))),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: oc.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             const SizedBox(height: 14),
-            Text('RENAME TAG',
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
-                    color: oc.text)),
+            Text(
+              'RENAME TAG',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+                color: oc.text,
+              ),
+            ),
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
@@ -135,10 +165,11 @@ Future<void> _renameSheet(BuildContext context, AppStore store, String tag,
                 onSubmitted: (v) => Navigator.of(sheetCtx).pop(v.trim()),
                 style: TextStyle(fontSize: 14, color: oc.text),
                 decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
-                    hintText: 'Tag name'),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 14),
+                  hintText: 'Tag name',
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -154,12 +185,15 @@ Future<void> _renameSheet(BuildContext context, AppStore store, String tag,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   child: Center(
-                    child: Text('SAVE',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.5,
-                            color: ExpndColors.ink)),
+                    child: Text(
+                      'SAVE',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                        color: ExpndColors.ink,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -178,8 +212,12 @@ Future<void> _renameSheet(BuildContext context, AppStore store, String tag,
   Haptics.success();
 }
 
-Future<void> _confirmDelete(BuildContext context, AppStore store, String tag,
-    VoidCallback? onDeleted) async {
+Future<void> _confirmDelete(
+  BuildContext context,
+  AppStore store,
+  String tag,
+  VoidCallback? onDeleted,
+) async {
   final oc = context.oc;
   final count = store.transactionsWithTag(tag).length;
   await showModalBottomSheet(
@@ -191,18 +229,24 @@ Future<void> _confirmDelete(BuildContext context, AppStore store, String tag,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Delete #$tag?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w900, color: oc.text)),
+            Text(
+              'Delete #$tag?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: oc.text,
+              ),
+            ),
             const SizedBox(height: 8),
             Text(
-                count == 0
-                    ? "This tag isn't used anywhere."
-                    : 'Removed from $count transaction${count == 1 ? '' : 's'}. '
+              count == 0
+                  ? "This tag isn't used anywhere."
+                  : 'Removed from $count transaction${count == 1 ? '' : 's'}. '
                         'The transactions themselves stay. This cannot be undone.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: oc.muted)),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: oc.muted),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -213,9 +257,13 @@ Future<void> _confirmDelete(BuildContext context, AppStore store, String tag,
                   Haptics.warning();
                   Navigator.of(sheetCtx).pop();
                 },
-                child: Text('Delete',
-                    style: TextStyle(
-                        color: ExpndColors.red, fontWeight: FontWeight.bold)),
+                child: Text(
+                  'Delete',
+                  style: TextStyle(
+                    color: ExpndColors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             SizedBox(

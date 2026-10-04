@@ -138,7 +138,7 @@ class NeoPopBillCard extends StatelessWidget {
       faceColor: color,
       depthColor: depth,
       borderColor: Colors.white.withValues(alpha: 0.12),
-      depth: 5,
+      depth: 0,
       cornerRadius: 0,
       child: ClipRect(
         child: Stack(
@@ -173,7 +173,7 @@ class NeoPopBillCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
-                                letterSpacing: 2,
+                                letterSpacing: 0.3,
                                 color: Colors.white.withValues(alpha: 0.8),
                               ),
                             ),
@@ -204,7 +204,7 @@ class NeoPopBillCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
+                        letterSpacing: 0.3,
                         color: Colors.white,
                       ),
                     ),
@@ -240,32 +240,36 @@ class NeoPopBillCard extends StatelessWidget {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: onCta,
-                        child: Container(
-                          height: 44,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          alignment: Alignment.center,
-                          color: Colors.white,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                ctaLabel,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.4,
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: onCta,
+                          child: Container(
+                            height: 44,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            alignment: Alignment.center,
+                            color: Colors.white,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    ctaLabel,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.4,
+                                      color: Color(0xFF121212),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.arrow_forward,
+                                  size: 15,
                                   color: Color(0xFF121212),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(
-                                Icons.arrow_forward,
-                                size: 15,
-                                color: Color(0xFF121212),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -405,7 +409,7 @@ class NeoPopStatCard extends StatelessWidget {
             color: panel,
             border: Border.all(color: line, width: 0.5),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -423,7 +427,7 @@ class NeoPopStatCard extends StatelessWidget {
                     // Wider than the 90pt gauge so the max label (e.g. "$3,000")
                     // renders in full at boosted text sizes instead of "$3,00…".
                     SizedBox(
-                      width: 132,
+                      width: 100,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -433,9 +437,9 @@ class NeoPopStatCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 8,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
+                                letterSpacing: 0,
                                 color: oc.dimmed,
                               ),
                             ),
@@ -448,9 +452,9 @@ class NeoPopStatCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.right,
                               style: TextStyle(
-                                fontSize: 8,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
+                                letterSpacing: 0,
                                 color: oc.dimmed,
                               ),
                             ),
@@ -461,17 +465,17 @@ class NeoPopStatCard extends StatelessWidget {
                   ],
                 ],
               ),
-              const SizedBox(width: 32),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      statusLabel.toUpperCase(),
+                      statusLabel,
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
+                        letterSpacing: 0.3,
                         color: statusColor,
                       ),
                     ),
@@ -555,13 +559,13 @@ class NeoPopStatCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
-                    footerText!.toUpperCase(),
+                    footerText!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 2,
+                      letterSpacing: 0.3,
                       color: popWhite,
                     ),
                   ),

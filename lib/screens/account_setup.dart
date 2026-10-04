@@ -9,6 +9,7 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/neopop.dart';
+import '../widgets/money_field.dart';
 import '../widgets/neopop_cards.dart';
 import 'whats_new.dart';
 
@@ -116,220 +117,245 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
 
   Widget _welcome(ExpndColors oc) {
     final settings = context.watch<SettingsStore>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        children: [
-          const Spacer(),
-          SizedBox(
-            width: 130,
-            height: 130,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: ExpndColors.gold.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: ExpndColors.gold.withValues(alpha: 0.07),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                Icon(sfIcon('creditcard.fill'), size: 50, color: oc.accent),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'SET UP YOUR WALLET',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              color: oc.text,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'How many accounts do you have?',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: oc.muted,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Bank accounts, cash, credit cards, etc.',
-            style: TextStyle(fontSize: 12, color: oc.dimmed),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                iconSize: 38,
-                icon: Icon(
-                  sfIcon('minus.circle.fill') == sfIcon('circle')
-                      ? Icons.remove_circle
-                      : Icons.remove_circle,
-                  color: _count > 1 ? ExpndColors.gold : oc.dimmed,
-                ),
-                onPressed: () {
-                  if (_count > 1) {
-                    Haptics.light();
-                    setState(() => _count--);
-                  }
-                },
-              ),
-              const SizedBox(width: 20),
-              SizedBox(
-                width: 64,
-                child: Text(
-                  '$_count',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 56,
-                    fontWeight: FontWeight.w900,
-                    color: oc.text,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 20),
-              IconButton(
-                iconSize: 38,
-                icon: Icon(
-                  Icons.add_circle,
-                  color: _count < 10 ? ExpndColors.gold : oc.dimmed,
-                ),
-                onPressed: () {
-                  if (_count < 10) {
-                    Haptics.light();
-                    setState(() => _count++);
-                  }
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          // The whole app uses one currency, chosen here at setup.
-          Text(
-            'CURRENCY',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-              color: oc.muted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () async {
-              final picked = await showCurrencyPicker(
-                context,
-                settings.currencyCode,
-              );
-              if (picked != null) settings.currencyCode = picked;
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: oc.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: oc.border, width: 1.5),
-              ),
-              child: Row(
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
                 children: [
-                  Text(
-                    currencySymbol(settings.currencyCode),
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: oc.accent,
+                  const Spacer(),
+                  SizedBox(
+                    width: 130,
+                    height: 130,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: ExpndColors.gold.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: ExpndColors.gold.withValues(alpha: 0.07),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Icon(
+                          sfIcon('creditcard.fill'),
+                          size: 50,
+                          color: oc.accent,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      supportedCurrencies
-                              .where((c) => c.code == settings.currencyCode)
-                              .map((c) => '${c.code} · ${c.name}')
-                              .firstOrNull ??
-                          settings.currencyCode,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: oc.text,
+                  const SizedBox(height: 24),
+                  Text(
+                    'SET UP YOUR WALLET',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                      color: oc.text,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'How many accounts do you have?',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: oc.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Bank accounts, cash, credit cards, etc.',
+                    style: TextStyle(fontSize: 12, color: oc.dimmed),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        iconSize: 38,
+                        icon: Icon(
+                          sfIcon('minus.circle.fill') == sfIcon('circle')
+                              ? Icons.remove_circle
+                              : Icons.remove_circle,
+                          color: _count > 1 ? ExpndColors.gold : oc.dimmed,
+                        ),
+                        onPressed: () {
+                          if (_count > 1) {
+                            Haptics.light();
+                            setState(() => _count--);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 20),
+                      SizedBox(
+                        width: 64,
+                        child: Text(
+                          '$_count',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 56,
+                            fontWeight: FontWeight.w700,
+                            color: oc.text,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      IconButton(
+                        iconSize: 38,
+                        icon: Icon(
+                          Icons.add_circle,
+                          color: _count < 10 ? ExpndColors.gold : oc.dimmed,
+                        ),
+                        onPressed: () {
+                          if (_count < 10) {
+                            Haptics.light();
+                            setState(() => _count++);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  // The whole app uses one currency, chosen here at setup.
+                  Text(
+                    'CURRENCY',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                      color: oc.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () async {
+                      final picked = await showCurrencyPicker(
+                        context,
+                        settings.currencyCode,
+                      );
+                      if (picked != null) settings.currencyCode = picked;
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: oc.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: oc.border, width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            currencySymbol(settings.currencyCode),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: oc.accent,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              supportedCurrencies
+                                      .where(
+                                        (c) => c.code == settings.currencyCode,
+                                      )
+                                      .map((c) => '${c.code} · ${c.name}')
+                                      .firstOrNull ??
+                                  settings.currencyCode,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: oc.text,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            sfIcon('chevron.right'),
+                            size: 12,
+                            color: oc.dimmed,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
+                  const Spacer(),
+                  NeoPopButton(
+                    onPressed: () {
+                      Haptics.medium();
+                      final code = context.read<SettingsStore>().currencyCode;
+                      _drafts = List.generate(
+                        _count,
+                        (_) => _AccountDraft(code),
+                      );
+                      setState(() => _step = 1);
+                    },
+                    depth: 4,
+                    cornerRadius: 8,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'CONTINUE',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5,
+                                color: ExpndColors.ink,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              sfIcon('arrow.up') == sfIcon('circle')
+                                  ? Icons.arrow_forward
+                                  : Icons.arrow_forward,
+                              size: 12,
+                              color: ExpndColors.ink,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _complete,
+                    child: Text(
+                      'Skip for now',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: oc.dimmed,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
                 ],
               ),
             ),
           ),
-          const Spacer(),
-          NeoPopButton(
-            onPressed: () {
-              Haptics.medium();
-              final code = context.read<SettingsStore>().currencyCode;
-              _drafts = List.generate(_count, (_) => _AccountDraft(code));
-              setState(() => _step = 1);
-            },
-            depth: 4,
-            cornerRadius: 8,
-            child: SizedBox(
-              width: double.infinity,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'CONTINUE',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        color: ExpndColors.ink,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      sfIcon('arrow.up') == sfIcon('circle')
-                          ? Icons.arrow_forward
-                          : Icons.arrow_forward,
-                      size: 12,
-                      color: ExpndColors.ink,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: _complete,
-            child: Text(
-              'Skip for now',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: oc.dimmed,
-              ),
-            ),
-          ),
-          const SizedBox(height: 30),
-        ],
+        ),
       ),
     );
   }
@@ -365,7 +391,7 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
             "YOU'RE ALL SET!",
             style: TextStyle(
               fontSize: 20,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
               color: oc.text,
             ),
@@ -395,7 +421,7 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
                       'GET STARTED',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: 1.5,
                         color: ExpndColors.ink,
                       ),
@@ -487,12 +513,12 @@ class _AccountStepFormState extends State<_AccountStepForm> {
               : 'Account ${widget.accountNumber} Details',
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             color: oc.text,
           ),
         ),
         const SizedBox(height: 20),
-        _label('ACCOUNT NAME', oc),
+        _label('Account name', oc),
         const SizedBox(height: 8),
         _box(
           oc,
@@ -508,7 +534,7 @@ class _AccountStepFormState extends State<_AccountStepForm> {
           ),
         ),
         const SizedBox(height: 20),
-        _label('ACCOUNT TYPE', oc),
+        _label('Account type', oc),
         const SizedBox(height: 8),
         _typeGrid(oc, d.type, (t) => setState(() => d.type = t)),
         const SizedBox(height: 20),
@@ -517,41 +543,11 @@ class _AccountStepFormState extends State<_AccountStepForm> {
           oc,
         ),
         const SizedBox(height: 8),
-        _box(
-          oc,
-          child: Row(
-            children: [
-              Text(
-                currencySymbol(d.currencyCode),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: oc.accent,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: TextField(
-                  controller: _balanceCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  inputFormatters: amountInputFormatters,
-                  onChanged: (v) => d.balance = v,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: oc.text,
-                  ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    hintText: '0.00',
-                  ),
-                ),
-              ),
-            ],
-          ),
+        MoneyField(
+          controller: _balanceCtrl,
+          currencyCode: d.currencyCode,
+          label: 'Current balance',
+          onChanged: (v) => d.balance = v,
         ),
         const SizedBox(height: 20),
         Row(
@@ -765,11 +761,11 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            _isEditing ? 'EDIT ACCOUNT' : 'ADD ACCOUNT',
+            _isEditing ? 'Edit account' : 'Add account',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -811,7 +807,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                _label('ACCOUNT NAME', oc),
+                _label('Account name', oc),
                 const SizedBox(height: 8),
                 _box(
                   oc,
@@ -827,7 +823,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                _label('ACCOUNT TYPE', oc),
+                _label('Account type', oc),
                 const SizedBox(height: 8),
                 _typeGrid(oc, _type, (t) {
                   setState(() {
@@ -845,85 +841,25 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                   oc,
                 ),
                 const SizedBox(height: 8),
-                _box(
-                  oc,
-                  child: Row(
-                    children: [
-                      Text(
-                        currencySymbol(_currencyCode),
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: oc.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: TextField(
-                          controller: _balanceCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: amountInputFormatters,
-                          onChanged: (_) => setState(() {}),
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: oc.text,
-                          ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            isDense: true,
-                            hintText: '0.00',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                MoneyField(
+                  controller: _balanceCtrl,
+                  currencyCode: _currencyCode,
+                  label: 'Current balance',
+                  onChanged: (_) => setState(() {}),
                 ),
                 if (_type == AccountType.credit) ...[
                   const SizedBox(height: 22),
-                  _label('CREDIT LIMIT', oc),
+                  _label('Credit limit', oc),
                   const SizedBox(height: 8),
-                  _box(
-                    oc,
-                    child: Row(
-                      children: [
-                        Text(
-                          currencySymbol(_currencyCode),
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: oc.accent,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: TextField(
-                            controller: _limitCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: amountInputFormatters,
-                            onChanged: (_) => setState(() {}),
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: oc.text,
-                            ),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              hintText: '0.00',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  MoneyField(
+                    controller: _limitCtrl,
+                    currencyCode: _currencyCode,
+                    label: 'Credit limit',
+                    onChanged: (_) => setState(() {}),
                   ),
                 ],
                 const SizedBox(height: 22),
-                _label('CARD NUMBER', oc),
+                _label('Card number', oc),
                 const SizedBox(height: 8),
                 _box(
                   oc,
@@ -938,7 +874,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      letterSpacing: 2,
+                      letterSpacing: 0.3,
                       color: oc.text,
                     ),
                     decoration: InputDecoration(
@@ -954,7 +890,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                   style: TextStyle(fontSize: 11, color: oc.dimmed),
                 ),
                 const SizedBox(height: 22),
-                _label('CARD COLOR', oc),
+                _label('Card color', oc),
                 const SizedBox(height: 8),
                 GridView.count(
                   crossAxisCount: 5,
@@ -1019,10 +955,10 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _isEditing ? 'SAVE CHANGES' : 'ADD ACCOUNT',
+                            _isEditing ? 'Save changes' : 'Add account',
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               letterSpacing: 1.5,
                               color: _isValid ? ExpndColors.ink : oc.dimmed,
                             ),
@@ -1091,169 +1027,171 @@ class AccountCardContent extends StatelessWidget {
     // Dynamic Type — otherwise enlarged text overflows the fixed card height.
     return MediaQuery.withNoTextScaling(
       child: NeoPopElevated(
-      faceColor: cardColor,
-      depthColor: Colors.black,
-      borderColor: Colors.white.withValues(alpha: 0.14),
-      depth: 6,
-      cornerRadius: 5,
-      child: SizedBox(
-        height: cardHeight,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(5),
-          child: Stack(
-            children: [
-              const Positioned.fill(child: CardGuilloche()),
-              Positioned.fill(
-                child: NeoPopShine(color: Colors.white.withValues(alpha: 0.10)),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name.isEmpty ? 'Account Name' : name,
+        faceColor: cardColor,
+        depthColor: Colors.black,
+        borderColor: Colors.white.withValues(alpha: 0.14),
+        depth: 0,
+        cornerRadius: 5,
+        child: SizedBox(
+          height: cardHeight,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: Stack(
+              children: [
+                const Positioned.fill(child: CardGuilloche()),
+                Positioned.fill(
+                  child: NeoPopShine(
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name.isEmpty ? 'Account Name' : name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  type.raw.toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                    color: faceText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            sfIcon(type.icon),
+                            size: 20,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const CardChip(),
+                      const Spacer(),
+                      Text(
+                        _showCredit ? 'AVAILABLE CREDIT' : 'TOTAL BALANCE',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                          color: faceText,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          formatCurrency(
+                            _showCredit
+                                ? ((creditLimit ?? 0) - creditUsed).clamp(
+                                    0.0,
+                                    creditLimit ?? 0,
+                                  )
+                                : balance,
+                            currencyCode,
+                          ),
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      if (_showCredit) ...[
+                        const SizedBox(height: 8),
+                        _UtilizationBar(
+                          fraction:
+                              ((creditLimit ?? 0) <= 0
+                                      ? 0.0
+                                      : creditUsed / (creditLimit ?? 1))
+                                  .clamp(0.0, 1.0),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${formatCurrency(creditUsed, currencyCode)} used',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.2,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                type.raw.toUpperCase(),
-                                style: const TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
-                                  letterSpacing: 2,
                                   color: faceText,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          sfIcon(type.icon),
-                          size: 20,
-                          color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Limit ${formatCurrency(creditLimit ?? 0, currencyCode)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: faceText,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 10),
-                    const CardChip(),
-                    const Spacer(),
-                    Text(
-                      _showCredit ? 'AVAILABLE CREDIT' : 'TOTAL BALANCE',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2,
-                        color: faceText,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        formatCurrency(
-                          _showCredit
-                              ? ((creditLimit ?? 0) - creditUsed).clamp(
-                                  0.0,
-                                  creditLimit ?? 0,
-                                )
-                              : balance,
-                          currencyCode,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    if (_showCredit) ...[
                       const SizedBox(height: 8),
-                      _UtilizationBar(
-                        fraction:
-                            ((creditLimit ?? 0) <= 0
-                                    ? 0.0
-                                    : creditUsed / (creditLimit ?? 1))
-                                .clamp(0.0, 1.0),
-                      ),
-                      const SizedBox(height: 6),
                       Row(
                         children: [
                           Flexible(
                             child: Text(
-                              '${formatCurrency(creditUsed, currencyCode)} used',
+                              maskedCardNumber(cardDigits),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 10,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
                                 color: faceText,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              'Limit ${formatCurrency(creditLimit ?? 0, currencyCode)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: faceText,
-                              ),
-                            ),
+                          NeoPopTag(
+                            text: currencyCode,
+                            bg: Colors.white.withValues(alpha: 0.16),
+                            fg: Colors.white,
                           ),
                         ],
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            maskedCardNumber(cardDigits),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 2,
-                              color: faceText,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        NeoPopTag(
-                          text: currencyCode,
-                          bg: Colors.white.withValues(alpha: 0.16),
-                          fg: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1292,9 +1230,9 @@ class _UtilizationBar extends StatelessWidget {
 Widget _label(String t, ExpndColors oc) => Text(
   t,
   style: TextStyle(
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: FontWeight.bold,
-    letterSpacing: 2,
+    letterSpacing: 0.3,
     color: oc.muted,
   ),
 );
@@ -1323,7 +1261,7 @@ Widget _typeGrid(
     crossAxisSpacing: 10,
     // Slightly taller cells so a two-line type name ("Credit Card") plus icon
     // clears the tile even at a bumped-up system text size.
-    childAspectRatio: 1.4,
+    childAspectRatio: 1.0,
     children: [
       for (final t in AccountType.values)
         Builder(
@@ -1368,7 +1306,7 @@ Widget _typeGrid(
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 0.5,
                             color: sel ? ExpndColors.ink : oc.muted,
@@ -1415,8 +1353,8 @@ Future<String?> showCurrencyPicker(BuildContext context, String current) {
               'SELECT CURRENCY',
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
                 color: oc.text,
               ),
             ),
@@ -1442,7 +1380,7 @@ Future<String?> showCurrencyPicker(BuildContext context, String current) {
                           softWrap: false,
                           style: TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             color: oc.accent,
                           ),
                         ),

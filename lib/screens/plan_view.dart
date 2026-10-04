@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/insights.dart';
 import '../services/reminders.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
@@ -12,7 +13,10 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/app_header.dart';
+import '../widgets/disclosure_section.dart';
+import '../widgets/context_ai_coach.dart';
 import '../widgets/neopop.dart';
+import '../widgets/money_field.dart';
 import '../widgets/neopop_cards.dart';
 import '../widgets/section_card.dart';
 import 'settings_view.dart';
@@ -32,6 +36,7 @@ class PlanView extends StatefulWidget {
 }
 
 class _PlanViewState extends State<PlanView> {
+  String _focus = 'Budgets';
   final _budgetCtrl = TextEditingController();
 
   @override
@@ -66,6 +71,7 @@ class _PlanViewState extends State<PlanView> {
         .fold(0.0, (s, t) => s + t.amount);
     final balance = totalIncome - totalExpenses;
     final goals = store.goals;
+    final aiFacts = _planAiFacts(store, settings, code);
 
     return Container(
       color: oc.bg,
@@ -86,32 +92,137 @@ class _PlanViewState extends State<PlanView> {
                 ExpndSpacing.scrollBottomUnderTabBar(context),
               ),
               children: [
-                _statsGrid(
-                  oc,
-                  txns.length,
-                  balance,
-                  totalIncome,
-                  totalExpenses,
-                  symbol,
+                Text(
+                  'What would you like to plan?',
+                  style: TextStyle(fontSize: 14, color: oc.muted),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final focus in [
+                      'Budgets',
+                      'Savings goals',
+                      'Debts & loans',
+                    ])
+                      ChoiceChip(
+                        label: Text(focus),
+                        selected: _focus == focus,
+                        onSelected: (_) => setState(() => _focus = focus),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 20),
-                _budgetSection(oc, store, settings, symbol),
-                const SizedBox(height: 20),
-                _categoryBudgetsSection(oc, store, symbol),
-                const SizedBox(height: 20),
-                _goalsSection(oc, store, goals, symbol),
-                const SizedBox(height: 20),
-                _debtsSection(oc, store, symbol),
-                if (store.emis.isNotEmpty) ...[
+                if (_focus == 'Budgets') ...[
+                  _budgetSection(oc, store, settings, symbol),
                   const SizedBox(height: 20),
-                  _loansSection(oc, store, code),
+                  _categoryBudgetsSection(oc, store, symbol),
                 ],
+                if (_focus == 'Savings goals')
+                  _goalsSection(oc, store, goals, symbol),
+                if (_focus == 'Debts & loans') ...[
+                  _debtsSection(oc, store, symbol),
+                  if (store.emis.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _loansSection(oc, store, code),
+                  ],
+                ],
+                const SizedBox(height: 20),
+                DisclosureSection(
+                  title: 'Overall progress',
+                  subtitle: 'Lifetime totals and planning insights',
+                  child: Column(
+                    children: [
+                      _statsGrid(
+                        oc,
+                        txns.length,
+                        balance,
+                        totalIncome,
+                        totalExpenses,
+                        symbol,
+                      ),
+                      if (aiFacts.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        ContextAiCoach(facts: aiFacts),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<Insight> _planAiFacts(
+    AppStore store,
+    SettingsStore settings,
+    String code,
+  ) {
+    final facts = <Insight>[];
+    final budget = settings.monthlyBudget;
+    if (budget > 0) {
+      final spent = store.spentInMonth(DateTime.now());
+      final remaining = budget - spent;
+      facts.add(
+        Insight(
+          title: remaining >= 0
+              ? '${formatCurrency(remaining, code)} left this month'
+              : '${formatCurrency(remaining.abs(), code)} over this month',
+          detail:
+              '${formatCurrency(spent, code)} spent from ${formatCurrency(budget, code)}',
+          tone: remaining >= 0 ? InsightTone.good : InsightTone.warn,
+          icon: remaining >= 0
+              ? 'checkmark.circle.fill'
+              : 'exclamationmark.triangle.fill',
+          weight: 100,
+        ),
+      );
+    }
+
+    if (store.goals.isNotEmpty) {
+      final saved = store.goals.fold(
+        0.0,
+        (sum, goal) => sum + goal.allocatedAmount,
+      );
+      final target = store.goals.fold(
+        0.0,
+        (sum, goal) => sum + goal.targetAmount,
+      );
+      facts.add(
+        Insight(
+          title:
+              '${store.goals.length} savings goal${store.goals.length == 1 ? '' : 's'} active',
+          detail:
+              '${formatCurrency(saved, code)} saved of ${formatCurrency(target, code)}',
+          tone: InsightTone.good,
+          icon: 'target',
+          weight: 70,
+        ),
+      );
+    }
+
+    final openDebts = store.debts.where((debt) => !debt.isSettled).toList();
+    if (openDebts.isNotEmpty) {
+      final outstanding = openDebts.fold(
+        0.0,
+        (sum, debt) => sum + store.outstandingOn(debt),
+      );
+      facts.add(
+        Insight(
+          title:
+              '${formatCurrency(outstanding, code)} across ${openDebts.length} open debt${openDebts.length == 1 ? '' : 's'}',
+          detail: 'Repayment plans stay visible in Upcoming',
+          tone: InsightTone.neutral,
+          icon: 'arrow.left.arrow.right',
+          weight: 60,
+        ),
+      );
+    }
+    return facts;
   }
 
   Widget _statsGrid(
@@ -127,7 +238,7 @@ class _PlanViewState extends State<PlanView> {
         faceColor: oc.surface,
         depthColor: oc.edge,
         borderColor: color.withValues(alpha: 0.3),
-        depth: 4,
+        depth: 0,
         cornerRadius: 6,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -151,7 +262,7 @@ class _PlanViewState extends State<PlanView> {
                   value,
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: color,
                   ),
                 ),
@@ -171,7 +282,7 @@ class _PlanViewState extends State<PlanView> {
         Padding(
           padding: const EdgeInsets.only(left: 2, bottom: 8),
           child: Text(
-            'ALL-TIME TOTALS',
+            'All-time totals',
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.bold,
@@ -182,12 +293,12 @@ class _PlanViewState extends State<PlanView> {
         ),
         Row(
           children: [
-            tile('TRANSACTIONS', '$count', ExpndColors.gold),
+            tile('Transactions', '$count', ExpndColors.gold),
             const SizedBox(width: 12),
             // "LIFETIME NET" (income − expense over all time), not a spendable
             // balance — the wallet's "NET WORTH" is the money-on-hand figure.
             tile(
-              'LIFETIME NET',
+              'Lifetime net',
               balance >= 0 ? '+${money(balance)}' : '-${money(balance)}',
               balance >= 0 ? ExpndColors.green : ExpndColors.red,
             ),
@@ -196,9 +307,9 @@ class _PlanViewState extends State<PlanView> {
         const SizedBox(height: 12),
         Row(
           children: [
-            tile('TOTAL INCOME', money(income), ExpndColors.green),
+            tile('Total income', money(income), ExpndColors.green),
             const SizedBox(width: 12),
-            tile('TOTAL EXPENSES', money(expenses), ExpndColors.red),
+            tile('Total expenses', money(expenses), ExpndColors.red),
           ],
         ),
       ],
@@ -228,92 +339,42 @@ class _PlanViewState extends State<PlanView> {
         ? ExpndColors.red
         : progress >= 0.7
         ? oc.accent
-        : ExpndColors.green;
+        : oc.positive;
 
     return sectionCard(
       oc,
-      'BUDGET',
+      'Monthly budget',
       Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(sfIcon('target'), size: 20, color: oc.accent),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Monthly Budget',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: oc.text,
-                        ),
-                      ),
-                      Text(
-                        // Explain what the field does rather than echo the
-                        // amount the input beside it already shows.
-                        base > 0
-                            ? 'Your spending cap each month'
-                            : 'Set a monthly spending cap',
-                        style: TextStyle(fontSize: 11, color: oc.muted),
-                      ),
-                    ],
+                Text(
+                  'Monthly spending limit',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: oc.text,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: oc.bg,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: oc.border, width: 1.5),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        symbol,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          color: oc.accent,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 80,
-                        child: TextField(
-                          controller: _budgetCtrl,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.right,
-                          // Cap at 7 digits (max 9,999,999). Larger values
-                          // overflow the budget gauge's max label. Digits only
-                          // since monthlyBudget is stored whole (toStringAsFixed(0)).
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(7),
-                          ],
-                          onChanged: (v) =>
-                              settings.monthlyBudget = double.tryParse(v) ?? 0,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: oc.text,
-                          ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            isDense: true,
-                            hintText: '0',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: 4),
+                Text(
+                  'Set your limit for the whole month. Use 0 for no limit.',
+                  style: TextStyle(fontSize: 12, color: oc.muted),
+                ),
+                const SizedBox(height: 12),
+                MoneyField(
+                  controller: _budgetCtrl,
+                  currencyCode: settings.currencyCode,
+                  label: 'Monthly spending limit',
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(7),
+                  ],
+                  onChanged: (v) =>
+                      settings.monthlyBudget = double.tryParse(v) ?? 0,
                 ),
               ],
             ),
@@ -364,7 +425,7 @@ class _PlanViewState extends State<PlanView> {
               child: NeoPopStatCard(
                 progress: progress,
                 gaugeText: '${(progress * 100).toInt()}%',
-                statusLabel: progress >= 0.9
+                statusLabel: progress >= 1.0
                     ? 'over budget'
                     : progress >= 0.7
                     ? 'watch spending'
@@ -432,7 +493,7 @@ class _PlanViewState extends State<PlanView> {
 
     return sectionCard(
       oc,
-      'CATEGORY BUDGETS',
+      'Category budgets',
       Column(
         children: [
           if (budgets.isEmpty)
@@ -521,7 +582,7 @@ class _PlanViewState extends State<PlanView> {
         ? ExpndColors.red
         : progress >= 0.7
         ? oc.accent
-        : ExpndColors.green;
+        : oc.positive;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openCategoryBudgetSheet(
@@ -568,7 +629,7 @@ class _PlanViewState extends State<PlanView> {
                         '$symbol${_fmt(spent)} / $symbol${_fmt(limit)}',
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: color,
                         ),
                       ),
@@ -641,11 +702,11 @@ class _PlanViewState extends State<PlanView> {
             children: [
               Expanded(
                 child: Text(
-                  'SAVINGS GOALS',
+                  'Savings goals',
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -666,7 +727,7 @@ class _PlanViewState extends State<PlanView> {
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
+                          letterSpacing: 0.3,
                           color: oc.accent,
                         ),
                       ),
@@ -681,7 +742,7 @@ class _PlanViewState extends State<PlanView> {
             faceColor: oc.surface,
             depthColor: oc.edge,
             borderColor: oc.border,
-            depth: 4,
+            depth: 0,
             cornerRadius: 6,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -805,7 +866,7 @@ class _PlanViewState extends State<PlanView> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: oc.text,
                     ),
                   ),
@@ -814,7 +875,7 @@ class _PlanViewState extends State<PlanView> {
                   '$symbol${_fmt(balance)}',
                   style: TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: oc.text,
                   ),
                 ),
@@ -908,7 +969,7 @@ class _PlanViewState extends State<PlanView> {
                           formatCurrency(monthly, code),
                           style: TextStyle(
                             fontSize: 17,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             color: oc.text,
                           ),
                         ),
@@ -935,7 +996,7 @@ class _PlanViewState extends State<PlanView> {
                       formatCurrency(owed, code),
                       style: TextStyle(
                         fontSize: 17,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         color: ExpndColors.red,
                       ),
                     ),
@@ -986,7 +1047,7 @@ class _PlanViewState extends State<PlanView> {
                 '${formatCurrency(e.monthlyAmount, code)}/mo',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: done ? oc.dimmed : oc.accent,
                 ),
               ),
@@ -1052,7 +1113,7 @@ class _PlanViewState extends State<PlanView> {
                           '$symbol${_fmt(store.owedToMe)}',
                           style: TextStyle(
                             fontSize: 17,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             color: ExpndColors.green,
                           ),
                         ),
@@ -1078,7 +1139,7 @@ class _PlanViewState extends State<PlanView> {
                         '$symbol${_fmt(store.owedByMe)}',
                         style: TextStyle(
                           fontSize: 17,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: ExpndColors.red,
                         ),
                       ),
@@ -1124,12 +1185,14 @@ class _PlanViewState extends State<PlanView> {
                 children: [
                   Icon(sfIcon('plus.circle.fill'), size: 20, color: oc.accent),
                   const SizedBox(width: 12),
-                  Text(
-                    'Record a loan',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: oc.accent,
+                  Flexible(
+                    child: Text(
+                      'Record a loan',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: oc.accent,
+                      ),
                     ),
                   ),
                 ],
@@ -1218,7 +1281,7 @@ class _PlanViewState extends State<PlanView> {
                       '$symbol${_fmt(d.isSettled ? d.amount : outstanding)}',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         color: d.isSettled ? oc.dimmed : color,
                       ),
                     ),
@@ -1274,8 +1337,8 @@ class _PlanViewState extends State<PlanView> {
                   d.person.toUpperCase(),
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -1428,8 +1491,8 @@ class _PlanViewState extends State<PlanView> {
                   goal.name.toUpperCase(),
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -1522,7 +1585,7 @@ class _PlanViewState extends State<PlanView> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: oc.text,
                   ),
                 ),
@@ -1653,7 +1716,7 @@ class _PlanViewState extends State<PlanView> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               color: oc.text,
                             ),
                           ),
@@ -1804,7 +1867,7 @@ class _PlanViewState extends State<PlanView> {
             value,
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w700,
               color: oc.text,
             ),
           ),
@@ -1849,7 +1912,7 @@ class _PlanViewState extends State<PlanView> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     color: oc.text,
                   ),
                 ),
@@ -2024,8 +2087,8 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
                 _isEditing ? 'EDIT CATEGORY BUDGET' : 'ADD CATEGORY BUDGET',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
                   color: oc.text,
                 ),
               ),
@@ -2037,7 +2100,7 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
                 style: TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+                  letterSpacing: 0.3,
                   color: oc.muted,
                 ),
               ),
@@ -2101,51 +2164,17 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
               style: TextStyle(
                 fontSize: 9,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 2,
+                letterSpacing: 0.3,
                 color: oc.muted,
               ),
             ),
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: oc.bg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: oc.border, width: 1.5),
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    widget.symbol,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: oc.accent,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: TextField(
-                      controller: _limitCtrl,
-                      autofocus: _isEditing,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      inputFormatters: amountInputFormatters,
-                      onChanged: (_) => setState(() {}),
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: oc.text,
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: '0',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            MoneyField(
+              controller: _limitCtrl,
+              currencyCode: context.read<SettingsStore>().currencyCode,
+              label: 'Monthly category limit',
+              autofocus: _isEditing,
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 20),
             NeoPopButton(
@@ -2174,7 +2203,7 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
                       _isEditing ? 'SAVE' : 'ADD BUDGET',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: 1.5,
                         color: ExpndColors.ink,
                       ),
@@ -2308,7 +2337,10 @@ class _GoalSheetState extends State<_GoalSheet> {
     final acc = widget.store.accountFor(_accountId);
     if (acc == null) return 0;
     final free = widget.store.unallocatedIn(acc);
-    final mine = widget.editing?.allocatedAmount ?? 0;
+    final mine =
+        widget.editing != null && widget.editing!.accountId == _accountId
+        ? widget.editing!.allocatedAmount
+        : 0;
     final max = free + mine;
     return max < 0 ? 0 : max;
   }
@@ -2377,8 +2409,8 @@ class _GoalSheetState extends State<_GoalSheet> {
                   _isEditing ? 'EDIT SAVINGS GOAL' : 'NEW SAVINGS GOAL',
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -2623,7 +2655,7 @@ class _GoalSheetState extends State<_GoalSheet> {
                         _isEditing ? 'SAVE CHANGES' : 'ADD GOAL',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
                           color: _isValid ? ExpndColors.ink : oc.dimmed,
                         ),
@@ -2645,53 +2677,21 @@ class _GoalSheetState extends State<_GoalSheet> {
     style: TextStyle(
       fontSize: 9,
       fontWeight: FontWeight.bold,
-      letterSpacing: 2,
+      letterSpacing: 0.3,
       color: oc.muted,
     ),
   );
 
-  Widget _amountField(ExpndColors oc, TextEditingController ctrl, String hint) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: oc.bg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: oc.border, width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Text(
-            widget.symbol,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: oc.accent,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: TextField(
-              controller: ctrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: amountInputFormatters,
-              onChanged: (_) => setState(() {}),
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: oc.text,
-              ),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: hint,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _amountField(
+    ExpndColors oc,
+    TextEditingController ctrl,
+    String hint,
+  ) => MoneyField(
+    controller: ctrl,
+    currencyCode: context.read<SettingsStore>().currencyCode,
+    label: ctrl == _targetCtrl ? 'Goal target' : 'Amount set aside',
+    onChanged: (_) => setState(() {}),
+  );
 }
 
 /// Sets aside part of an account's existing balance for a goal.
@@ -2766,8 +2766,8 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                   'SET ASIDE',
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -2810,7 +2810,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                           'CHOOSE ACCOUNT',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 1.5,
                             color: ExpndColors.ink,
                           ),
@@ -2828,82 +2828,33 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: oc.bg,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: over ? ExpndColors.red : oc.border,
-                      width: 1.5,
+                MoneyField(
+                  controller: _ctrl,
+                  currencyCode: context.read<SettingsStore>().currencyCode,
+                  label: 'Amount to set aside',
+                  autofocus: true,
+                  error: over,
+                  onChanged: (_) => setState(() {}),
+                  trailing: TextButton(
+                    onPressed: () => setState(
+                      () => _ctrl.text = _available.toStringAsFixed(
+                        currencyDecimalDigits(
+                          context.read<SettingsStore>().currencyCode,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        symbol,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: oc.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: TextField(
-                          controller: _ctrl,
-                          autofocus: true,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: amountInputFormatters,
-                          onChanged: (_) => setState(() {}),
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: oc.text,
-                          ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            hintText: '0.00',
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          Haptics.light();
-                          setState(
-                            () => _ctrl.text = _available.toStringAsFixed(0),
-                          );
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
-                            'MAX',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
-                              color: oc.accent,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    child: const Text('Max'),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   over
-                      ? '${holder.name} only has $symbol${_fmt(_available)} unclaimed.'
+                      ? '${holder.name} only has $symbol${formatAmount(_available)} unclaimed.'
                       : 'Nothing moves — this money stays in ${holder.name}.',
                   style: TextStyle(
                     fontSize: 11,
@@ -2927,7 +2878,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                           'SET ASIDE',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 1.5,
                             color: _isValid ? ExpndColors.ink : oc.dimmed,
                           ),
@@ -2979,7 +2930,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -2988,7 +2939,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                 '$symbol${_fmt(balance)}',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: oc.text,
                 ),
               ),
@@ -3144,8 +3095,8 @@ class _DebtSheetState extends State<_DebtSheet> {
                   'RECORD A LOAN',
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -3196,48 +3147,11 @@ class _DebtSheetState extends State<_DebtSheet> {
               const SizedBox(height: 20),
               _label(oc, 'AMOUNT'),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: oc.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: oc.border, width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      widget.symbol,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: oc.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: TextField(
-                        controller: _amountCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        inputFormatters: amountInputFormatters,
-                        onChanged: (_) => setState(() {}),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: oc.text,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          hintText: '0',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              MoneyField(
+                controller: _amountCtrl,
+                currencyCode: context.read<SettingsStore>().currencyCode,
+                label: 'Debt amount',
+                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 20),
               _label(oc, 'DUE DATE (OPTIONAL)'),
@@ -3401,7 +3315,7 @@ class _DebtSheetState extends State<_DebtSheet> {
                         'SAVE',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
                           color: _isValid ? ExpndColors.ink : oc.dimmed,
                         ),
@@ -3446,7 +3360,7 @@ class _DebtSheetState extends State<_DebtSheet> {
               title,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
                 color: active ? color : oc.muted,
               ),
@@ -3464,7 +3378,7 @@ class _DebtSheetState extends State<_DebtSheet> {
     style: TextStyle(
       fontSize: 9,
       fontWeight: FontWeight.bold,
-      letterSpacing: 2,
+      letterSpacing: 0.3,
       color: oc.muted,
     ),
   );
@@ -3584,8 +3498,8 @@ class _RepaySheetState extends State<_RepaySheet> {
                   d.theyOweMe ? 'RECORD REPAYMENT' : 'RECORD A PAYMENT',
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
                     color: oc.text,
                   ),
                 ),
@@ -3598,71 +3512,22 @@ class _RepaySheetState extends State<_RepaySheet> {
                 ),
               ),
               const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: oc.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: over ? ExpndColors.red : oc.border,
-                    width: 1.5,
+              MoneyField(
+                controller: _ctrl,
+                currencyCode: context.read<SettingsStore>().currencyCode,
+                label: 'Repayment amount',
+                autofocus: true,
+                error: over,
+                onChanged: (_) => setState(() {}),
+                trailing: TextButton(
+                  onPressed: () => setState(
+                    () => _ctrl.text = _outstanding.toStringAsFixed(
+                      currencyDecimalDigits(
+                        context.read<SettingsStore>().currencyCode,
+                      ),
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      widget.symbol,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: oc.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: TextField(
-                        controller: _ctrl,
-                        autofocus: true,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        inputFormatters: amountInputFormatters,
-                        onChanged: (_) => setState(() {}),
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: oc.text,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          hintText: '0.00',
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Haptics.light();
-                        setState(
-                          () => _ctrl.text = _outstanding.toStringAsFixed(2),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Text(
-                          'ALL',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                            color: oc.accent,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  child: const Text('Full amount'),
                 ),
               ),
               if (over) ...[
@@ -3679,7 +3544,7 @@ class _RepaySheetState extends State<_RepaySheet> {
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -3743,7 +3608,7 @@ class _RepaySheetState extends State<_RepaySheet> {
                         'RECORD',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
                           color: _isValid ? ExpndColors.ink : oc.dimmed,
                         ),

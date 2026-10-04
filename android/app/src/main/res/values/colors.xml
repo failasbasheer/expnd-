@@ -2,6 +2,10 @@
 <resources>
     <color name="ic_launcher_background">#0D0D0D</color>
 
+    <!-- Native launch window background. Matches the iOS LaunchScreen's ink
+         (#0D0D0D) so neither platform flashes white before the splash. -->
+    <color name="launch_ink">#0D0D0D</color>
+
     <!-- Home-screen widget palette (mirrors ExpndColors). -->
     <color name="widget_bg">#141414</color>
     <color name="widget_ink">#0D0D0D</color>

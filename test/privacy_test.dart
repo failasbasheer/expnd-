@@ -53,8 +53,9 @@ void main() {
   });
 
   group('PrivacyEyeButton', () {
-    testWidgets('tapping it masks and reveals amounts on screen',
-        (tester) async {
+    testWidgets('tapping it masks and reveals amounts on screen', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
       final settings = await SettingsStore.create();
 

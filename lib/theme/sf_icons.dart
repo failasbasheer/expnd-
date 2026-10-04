@@ -20,6 +20,8 @@ const Map<String, IconData> _map = {
   'line.horizontal.3': CupertinoIcons.line_horizontal_3,
   'textformat': CupertinoIcons.textformat,
   'doc.on.doc': CupertinoIcons.doc_on_doc,
+  'sparkles': CupertinoIcons.sparkles,
+  'lightbulb': CupertinoIcons.lightbulb,
 
   // Categories
   'cart.fill': CupertinoIcons.cart_fill,

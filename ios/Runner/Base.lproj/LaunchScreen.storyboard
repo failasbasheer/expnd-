@@ -18,8 +18,8 @@
                         <subviews>
                             <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleAspectFit" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="173" id="Lw1-00-001"/>
-                                    <constraint firstAttribute="height" constant="172" id="Lh1-00-002"/>
+                                    <constraint firstAttribute="width" constant="200" id="Lw1-00-001"/>
+                                    <constraint firstAttribute="height" constant="200" id="Lh1-00-002"/>
                                 </constraints>
                             </imageView>
                         </subviews>
@@ -36,6 +36,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchImage" width="191" height="190"/>
+        <image name="LaunchImage" width="200" height="200"/>
     </resources>
 </document>

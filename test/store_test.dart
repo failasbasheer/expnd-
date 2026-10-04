@@ -29,11 +29,11 @@ class _FakeBox implements Box {
 AppStore _newStore() => AppStore(_FakeBox());
 
 Account _acct({double opening = 0, String currency = 'USD'}) => Account(
-      name: 'Test',
-      type: AccountType.bank,
-      currencyCode: currency,
-      balance: opening,
-    );
+  name: 'Test',
+  type: AccountType.bank,
+  currencyCode: currency,
+  balance: opening,
+);
 
 void main() {
   group('balance model', () {
@@ -48,16 +48,20 @@ void main() {
       final store = _newStore();
       final a = _acct(opening: 50);
       store.addAccount(a);
-      store.addTransaction(Transaction(
-        amount: 200,
-        category: TransactionCategory.salary,
-        type: TransactionType.income,
-      )..accountId = a.id);
-      store.addTransaction(Transaction(
-        amount: 30,
-        category: TransactionCategory.food,
-        type: TransactionType.expense,
-      )..accountId = a.id);
+      store.addTransaction(
+        Transaction(
+          amount: 200,
+          category: TransactionCategory.salary,
+          type: TransactionType.income,
+        )..accountId = a.id,
+      );
+      store.addTransaction(
+        Transaction(
+          amount: 30,
+          category: TransactionCategory.food,
+          type: TransactionType.expense,
+        )..accountId = a.id,
+      );
       // 50 + 200 - 30
       expect(store.balanceFor(a), 220);
     });
@@ -68,13 +72,15 @@ void main() {
       final to = _acct(opening: 0);
       store.addAccount(from);
       store.addAccount(to);
-      store.addTransaction(Transaction(
-        amount: 120,
-        category: TransactionCategory.other,
-        type: TransactionType.transfer,
-      )
-        ..accountId = from.id
-        ..toAccountId = to.id);
+      store.addTransaction(
+        Transaction(
+            amount: 120,
+            category: TransactionCategory.other,
+            type: TransactionType.transfer,
+          )
+          ..accountId = from.id
+          ..toAccountId = to.id,
+      );
 
       expect(store.balanceFor(from), 380);
       expect(store.balanceFor(to), 120);
@@ -126,8 +132,9 @@ void main() {
       // Next due date is now in the future.
       expect(template.nextDueDate!.isAfter(DateTime.now()), isTrue);
       // Generated occurrences are attached to the same account.
-      final generated =
-          store.transactions.where((t) => !t.isRecurring).toList();
+      final generated = store.transactions
+          .where((t) => !t.isRecurring)
+          .toList();
       expect(generated, isNotEmpty);
       expect(generated.every((t) => t.accountId == a.id), isTrue);
     });
@@ -172,12 +179,14 @@ void main() {
 
     AppStore storeWithSpend(DateTime when, double amount) {
       final store = _newStore();
-      store.addTransaction(Transaction(
-        amount: amount,
-        category: TransactionCategory.food,
-        type: TransactionType.expense,
-        date: when,
-      ));
+      store.addTransaction(
+        Transaction(
+          amount: amount,
+          category: TransactionCategory.food,
+          type: TransactionType.expense,
+          date: when,
+        ),
+      );
       return store;
     }
 
@@ -205,16 +214,22 @@ void main() {
 
     test('per-category rollover ignores other categories', () {
       final store = storeWithSpend(lastMonth, 400); // food
-      store.addTransaction(Transaction(
-        amount: 900,
-        category: TransactionCategory.shopping,
-        type: TransactionType.expense,
-        date: lastMonth,
-      ));
+      store.addTransaction(
+        Transaction(
+          amount: 900,
+          category: TransactionCategory.shopping,
+          type: TransactionType.expense,
+          date: lastMonth,
+        ),
+      );
       expect(
-          store.rolledOverLimit(500, thisMonth,
-              category: TransactionCategory.food),
-          600); // 500 + (500 - 400)
+        store.rolledOverLimit(
+          500,
+          thisMonth,
+          category: TransactionCategory.food,
+        ),
+        600,
+      ); // 500 + (500 - 400)
     });
 
     test('the overage warning respects the rolled-over limit', () {
@@ -240,27 +255,34 @@ void main() {
     AppStore storeWithPayees() {
       final store = _newStore();
       void log(String note, TransactionCategory cat, DateTime date) {
-        store.addTransaction(Transaction(
-          note: note,
-          amount: 10,
-          category: cat,
-          type: TransactionType.expense,
-          date: date,
-        ));
+        store.addTransaction(
+          Transaction(
+            note: note,
+            amount: 10,
+            category: cat,
+            type: TransactionType.expense,
+            date: date,
+          ),
+        );
       }
 
       log('Blue Bottle', TransactionCategory.food, DateTime(2026, 5, 1));
       log('Blue Bottle', TransactionCategory.groceries, DateTime(2026, 7, 1));
-      log('Bluesmith Garage', TransactionCategory.transport,
-          DateTime(2026, 6, 1));
+      log(
+        'Bluesmith Garage',
+        TransactionCategory.transport,
+        DateTime(2026, 6, 1),
+      );
       log('Uniqlo', TransactionCategory.shopping, DateTime(2026, 6, 2));
       return store;
     }
 
     test('matches on a partial payee name', () {
       final out = storeWithPayees().payeeSuggestions('blu');
-      expect(out.map((t) => t.note),
-          containsAll(['Blue Bottle', 'Bluesmith Garage']));
+      expect(
+        out.map((t) => t.note),
+        containsAll(['Blue Bottle', 'Bluesmith Garage']),
+      );
     });
 
     test('offers the most recent version of a repeated payee', () {
@@ -280,12 +302,14 @@ void main() {
 
     test('transfers are not payees', () {
       final store = _newStore();
-      store.addTransaction(Transaction(
-        note: 'To Emergency Fund',
-        amount: 500,
-        category: TransactionCategory.other,
-        type: TransactionType.transfer,
-      ));
+      store.addTransaction(
+        Transaction(
+          note: 'To Emergency Fund',
+          amount: 500,
+          category: TransactionCategory.other,
+          type: TransactionType.transfer,
+        ),
+      );
       expect(store.payeeSuggestions('emerg'), isEmpty);
     });
   });
@@ -307,10 +331,11 @@ void main() {
       store.addAccount(checking);
       store.addAccount(savings);
       final g = SavingsGoal(
-          name: 'Trip',
-          targetAmount: 1000,
-          allocatedAmount: 100,
-          accountId: savings.id);
+        name: 'Trip',
+        targetAmount: 1000,
+        allocatedAmount: 100,
+        accountId: savings.id,
+      );
       store.addGoal(g);
       return (store, checking, savings, g);
     }
@@ -338,14 +363,17 @@ void main() {
     test('claims and the remainder always sum to the real balance', () {
       final (store, _, savings, g) = goalFixture();
       final second = SavingsGoal(
-          name: 'Camera',
-          targetAmount: 800,
-          allocatedAmount: 150,
-          accountId: savings.id);
+        name: 'Camera',
+        targetAmount: 800,
+        allocatedAmount: 150,
+        accountId: savings.id,
+      );
       store.addGoal(second);
 
-      expect(store.claimedIn(savings) + store.unallocatedIn(savings),
-          store.balanceFor(savings));
+      expect(
+        store.claimedIn(savings) + store.unallocatedIn(savings),
+        store.balanceFor(savings),
+      );
     });
 
     test('unclaimed reflects what no goal has spoken for', () {
@@ -358,11 +386,13 @@ void main() {
       final (store, _, savings, g) = goalFixture();
       store.allocateToGoal(g, 400); // all 500 claimed
       // A real withdrawal the user actually made, recorded normally.
-      store.addTransaction(Transaction(
-        amount: 200,
-        category: TransactionCategory.shopping,
-        type: TransactionType.expense,
-      )..accountId = savings.id);
+      store.addTransaction(
+        Transaction(
+          amount: 200,
+          category: TransactionCategory.shopping,
+          type: TransactionType.expense,
+        )..accountId = savings.id,
+      );
 
       expect(store.balanceFor(savings), 300);
       expect(store.unallocatedIn(savings), -200);
@@ -407,15 +437,21 @@ void main() {
   group('tags', () {
     AppStore taggedStore() {
       final store = _newStore();
-      void log(String note, double amount, List<String> tags,
-          {TransactionType type = TransactionType.expense}) {
-        store.addTransaction(Transaction(
-          note: note,
-          amount: amount,
-          category: TransactionCategory.food,
-          type: type,
-          tags: tags,
-        ));
+      void log(
+        String note,
+        double amount,
+        List<String> tags, {
+        TransactionType type = TransactionType.expense,
+      }) {
+        store.addTransaction(
+          Transaction(
+            note: note,
+            amount: amount,
+            category: TransactionCategory.food,
+            type: type,
+            tags: tags,
+          ),
+        );
       }
 
       log('Flights', 800, ['Japan', 'travel']);
@@ -441,8 +477,7 @@ void main() {
     test('renaming merges into an existing tag without duplicating it', () {
       final store = taggedStore();
       store.renameTag('travel', 'Japan');
-      final flights =
-          store.transactions.firstWhere((t) => t.note == 'Flights');
+      final flights = store.transactions.firstWhere((t) => t.note == 'Flights');
       expect(flights.tags, ['Japan']);
       expect(store.allTags, ['Japan', 'work']);
     });
@@ -477,13 +512,19 @@ void main() {
       expect(store.balanceFor(a), 500 - 64);
       // Each line lands in its own category budget, which is the point.
       expect(
-          store.spentInMonth(DateTime(2026, 7),
-              category: TransactionCategory.groceries),
-          48);
+        store.spentInMonth(
+          DateTime(2026, 7),
+          category: TransactionCategory.groceries,
+        ),
+        48,
+      );
       expect(
-          store.spentInMonth(DateTime(2026, 7),
-              category: TransactionCategory.shopping),
-          16);
+        store.spentInMonth(
+          DateTime(2026, 7),
+          category: TransactionCategory.shopping,
+        ),
+        16,
+      );
     });
 
     test('the rows are linked and zero-amount lines are dropped', () {
@@ -522,7 +563,12 @@ void main() {
       final store = _newStore();
       final a = _acct(opening: 1000);
       store.addAccount(a);
-      final d = Debt(person: 'Rahul', amount: 500, theyOweMe: true, accountId: a.id);
+      final d = Debt(
+        person: 'Rahul',
+        amount: 500,
+        theyOweMe: true,
+        accountId: a.id,
+      );
       store.addDebt(d);
       return (store, a, d);
     }
@@ -594,11 +640,41 @@ void main() {
 
   group('RecurrenceRule.nextDate', () {
     final base = DateTime(2026, 1, 15, 9, 30);
-    test('daily', () => expect(RecurrenceRule.daily.nextDate(base), DateTime(2026, 1, 16, 9, 30)));
-    test('weekly', () => expect(RecurrenceRule.weekly.nextDate(base), DateTime(2026, 1, 22, 9, 30)));
-    test('biweekly', () => expect(RecurrenceRule.biweekly.nextDate(base), DateTime(2026, 1, 29, 9, 30)));
-    test('monthly', () => expect(RecurrenceRule.monthly.nextDate(base), DateTime(2026, 2, 15, 9, 30)));
-    test('yearly', () => expect(RecurrenceRule.yearly.nextDate(base), DateTime(2027, 1, 15, 9, 30)));
+    test(
+      'daily',
+      () => expect(
+        RecurrenceRule.daily.nextDate(base),
+        DateTime(2026, 1, 16, 9, 30),
+      ),
+    );
+    test(
+      'weekly',
+      () => expect(
+        RecurrenceRule.weekly.nextDate(base),
+        DateTime(2026, 1, 22, 9, 30),
+      ),
+    );
+    test(
+      'biweekly',
+      () => expect(
+        RecurrenceRule.biweekly.nextDate(base),
+        DateTime(2026, 1, 29, 9, 30),
+      ),
+    );
+    test(
+      'monthly',
+      () => expect(
+        RecurrenceRule.monthly.nextDate(base),
+        DateTime(2026, 2, 15, 9, 30),
+      ),
+    );
+    test(
+      'yearly',
+      () => expect(
+        RecurrenceRule.yearly.nextDate(base),
+        DateTime(2027, 1, 15, 9, 30),
+      ),
+    );
   });
 
   group('model JSON round-trips', () {
@@ -628,7 +704,10 @@ void main() {
     });
 
     test('CategoryBudget', () {
-      final b = CategoryBudget(category: TransactionCategory.transport, limit: 80);
+      final b = CategoryBudget(
+        category: TransactionCategory.transport,
+        limit: 80,
+      );
       final copy = CategoryBudget.fromJson(b.toJson());
       expect(copy.category, TransactionCategory.transport);
       expect(copy.limit, 80);
@@ -636,10 +715,11 @@ void main() {
 
     test('SavingsGoal keeps its allocation and holding account', () {
       final g = SavingsGoal(
-          name: 'Trip',
-          targetAmount: 1000,
-          allocatedAmount: 250,
-          accountId: 'acct-1');
+        name: 'Trip',
+        targetAmount: 1000,
+        allocatedAmount: 250,
+        accountId: 'acct-1',
+      );
       final copy = SavingsGoal.fromJson(g.toJson());
       expect(copy.allocatedAmount, 250);
       expect(copy.accountId, 'acct-1');
@@ -651,26 +731,36 @@ void main() {
     // to zero.
     test('SavingsGoal migrates both legacy amount fields', () {
       Map<String, Object> stored(String key, double value) => {
-            'id': 'g1',
-            'name': 'Trip',
-            'targetAmount': 1000.0,
-            key: value,
-            'iconName': 'star.fill',
-            'colorHex': 'F7C948',
-            'createdDate': DateTime(2026, 1, 1).millisecondsSinceEpoch,
-          };
+        'id': 'g1',
+        'name': 'Trip',
+        'targetAmount': 1000.0,
+        key: value,
+        'iconName': 'star.fill',
+        'colorHex': 'F7C948',
+        'createdDate': DateTime(2026, 1, 1).millisecondsSinceEpoch,
+      };
 
-      expect(SavingsGoal.fromJson(stored('currentAmount', 400)).allocatedAmount,
-          400);
-      expect(SavingsGoal.fromJson(stored('openingAmount', 250)).allocatedAmount,
-          250);
-      expect(SavingsGoal.fromJson(stored('currentAmount', 400)).accountId,
-          isNull);
+      expect(
+        SavingsGoal.fromJson(stored('currentAmount', 400)).allocatedAmount,
+        400,
+      );
+      expect(
+        SavingsGoal.fromJson(stored('openingAmount', 250)).allocatedAmount,
+        250,
+      );
+      expect(
+        SavingsGoal.fromJson(stored('currentAmount', 400)).accountId,
+        isNull,
+      );
     });
 
     test('CustomCategory applicable type', () {
       final c = CustomCategory(
-          name: 'Coffee', emoji: '☕', typeRaw: 'Expense', colorHex: 'F97316');
+        name: 'Coffee',
+        emoji: '☕',
+        typeRaw: 'Expense',
+        colorHex: 'F97316',
+      );
       final copy = CustomCategory.fromJson(c.toJson());
       expect(copy.applicableType, TransactionType.expense);
     });

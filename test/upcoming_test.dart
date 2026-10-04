@@ -26,12 +26,7 @@ class _FakeBox implements Box {
 AppStore _newStore() => AppStore(_FakeBox());
 
 Account _acct({double opening = 0, AccountType type = AccountType.bank}) =>
-    Account(
-      name: 'Test',
-      type: type,
-      currencyCode: 'USD',
-      balance: opening,
-    );
+    Account(name: 'Test', type: type, currencyCode: 'USD', balance: opening);
 
 /// A recurring template due on [due]. Mirrors how add_transaction builds one.
 Transaction _recurring({
@@ -62,12 +57,14 @@ void main() {
   group('projectUpcoming — recurring', () {
     test('non-recurring transactions are never projected', () {
       final s = _newStore();
-      s.addTransaction(Transaction(
-        amount: 50,
-        category: TransactionCategory.food,
-        type: TransactionType.expense,
-        date: DateTime(2026, 7, 25),
-      ));
+      s.addTransaction(
+        Transaction(
+          amount: 50,
+          category: TransactionCategory.food,
+          type: TransactionType.expense,
+          date: DateTime(2026, 7, 25),
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       expect(items, isEmpty);
     });
@@ -86,12 +83,14 @@ void main() {
 
     test('a weekly bill expands to every occurrence in the window', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 20,
-        due: DateTime(2026, 7, 22),
-        rule: RecurrenceRule.weekly,
-        note: 'Gym',
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 20,
+          due: DateTime(2026, 7, 22),
+          rule: RecurrenceRule.weekly,
+          note: 'Gym',
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       // Jul 22, 29, Aug 5, 12, 19 all fall within 30 days of Jul 21.
       expect(items.map((i) => i.date), [
@@ -105,11 +104,13 @@ void main() {
 
     test('biweekly expands correctly', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 30,
-        due: DateTime(2026, 7, 21),
-        rule: RecurrenceRule.biweekly,
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 30,
+          due: DateTime(2026, 7, 21),
+          rule: RecurrenceRule.biweekly,
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       expect(items.map((i) => i.date), [
         DateTime(2026, 7, 21),
@@ -137,22 +138,26 @@ void main() {
 
     test('a yearly bill outside the window contributes nothing', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 800,
-        due: DateTime(2027, 3, 1),
-        rule: RecurrenceRule.yearly,
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 800,
+          due: DateTime(2027, 3, 1),
+          rule: RecurrenceRule.yearly,
+        ),
+      );
       expect(projectUpcoming(s, from: DateTime(2026, 7, 21)), isEmpty);
     });
 
     test('income templates are projected as inflows', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 3400,
-        due: DateTime(2026, 8, 1),
-        type: TransactionType.income,
-        note: 'Salary',
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 3400,
+          due: DateTime(2026, 8, 1),
+          type: TransactionType.income,
+          note: 'Salary',
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       expect(items.single.isInflow, isTrue);
       expect(items.single.signedDelta, 3400);
@@ -160,25 +165,27 @@ void main() {
 
     test('a transfer nets to zero against net worth', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 250,
-        due: DateTime(2026, 7, 30),
-        type: TransactionType.transfer,
-        note: 'To savings',
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 250,
+          due: DateTime(2026, 7, 30),
+          type: TransactionType.transfer,
+          note: 'To savings',
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       expect(items.single.signedDelta, 0);
     });
 
     test('an untitled template falls back to its category name', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 10,
-        due: DateTime(2026, 7, 25),
-        note: '   ',
-      ));
-      expect(projectUpcoming(s, from: DateTime(2026, 7, 21)).single.title,
-          'Rent');
+      s.addTransaction(
+        _recurring(amount: 10, due: DateTime(2026, 7, 25), note: '   '),
+      );
+      expect(
+        projectUpcoming(s, from: DateTime(2026, 7, 21)).single.title,
+        'Rent',
+      );
     });
   });
 
@@ -188,15 +195,14 @@ void main() {
       int tenure = 12,
       double principal = 12000,
       double rate = 0,
-    }) =>
-        Emi(
-          accountId: 'acct',
-          name: 'Macbook',
-          principal: principal,
-          annualRate: rate,
-          tenureMonths: tenure,
-          startDate: start,
-        );
+    }) => Emi(
+      accountId: 'acct',
+      name: 'Macbook',
+      principal: principal,
+      annualRate: rate,
+      tenureMonths: tenure,
+      startDate: start,
+    );
 
     test('projects the next installment on the monthly anniversary', () {
       final s = _newStore();
@@ -228,7 +234,10 @@ void main() {
       // Jan 31 + 1 month must be Feb 28, not Mar 3.
       expect(addMonthsClamped(DateTime(2026, 1, 31), 1), DateTime(2026, 2, 28));
       expect(addMonthsClamped(DateTime(2024, 1, 31), 1), DateTime(2024, 2, 29));
-      expect(addMonthsClamped(DateTime(2026, 12, 31), 2), DateTime(2027, 2, 28));
+      expect(
+        addMonthsClamped(DateTime(2026, 12, 31), 2),
+        DateTime(2027, 2, 28),
+      );
     });
 
     test('a Jan 31 EMI lands on the clamped February date', () {
@@ -243,19 +252,19 @@ void main() {
     test('items from both sources interleave in date order', () {
       final s = _newStore();
       s.addTransaction(_recurring(amount: 1200, due: DateTime(2026, 8, 1)));
-      s.addTransaction(_recurring(
-        amount: 16,
-        due: DateTime(2026, 7, 24),
-        note: 'Netflix',
-      ));
-      s.addEmi(Emi(
-        accountId: 'acct',
-        name: 'Macbook',
-        principal: 12000,
-        annualRate: 0,
-        tenureMonths: 12,
-        startDate: DateTime(2026, 1, 28),
-      ));
+      s.addTransaction(
+        _recurring(amount: 16, due: DateTime(2026, 7, 24), note: 'Netflix'),
+      );
+      s.addEmi(
+        Emi(
+          accountId: 'acct',
+          name: 'Macbook',
+          principal: 12000,
+          annualRate: 0,
+          tenureMonths: 12,
+          startDate: DateTime(2026, 1, 28),
+        ),
+      );
       final items = projectUpcoming(s, from: DateTime(2026, 7, 21));
       expect(items.map((i) => i.title), ['Netflix', 'Macbook', 'Rent']);
     });
@@ -270,18 +279,17 @@ void main() {
       final s = _newStore();
       final a = _acct(opening: 5000);
       s.addAccount(a);
-      s.addTransaction(_recurring(
-        amount: 1200,
-        due: DateTime(2026, 7, 25),
-      ));
-      s.addEmi(Emi(
-        accountId: a.id,
-        name: 'Macbook',
-        principal: 12000,
-        annualRate: 0,
-        tenureMonths: 12,
-        startDate: DateTime(2026, 1, 28),
-      ));
+      s.addTransaction(_recurring(amount: 1200, due: DateTime(2026, 7, 25)));
+      s.addEmi(
+        Emi(
+          accountId: a.id,
+          name: 'Macbook',
+          principal: 12000,
+          annualRate: 0,
+          tenureMonths: 12,
+          startDate: DateTime(2026, 1, 28),
+        ),
+      );
 
       final from = DateTime(2026, 7, 21);
       final items = projectUpcoming(s, from: from);
@@ -301,15 +309,21 @@ void main() {
       final a = _acct(opening: 1000);
       s.addAccount(a);
       s.addTransaction(_recurring(amount: 400, due: DateTime(2026, 7, 25)));
-      s.addTransaction(_recurring(
-        amount: 3000,
-        due: DateTime(2026, 7, 28),
-        type: TransactionType.income,
-        note: 'Salary',
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 3000,
+          due: DateTime(2026, 7, 28),
+          type: TransactionType.income,
+          note: 'Salary',
+        ),
+      );
 
       final from = DateTime(2026, 7, 21);
-      final sum = summarizeUpcoming(s, projectUpcoming(s, from: from), from: from);
+      final sum = summarizeUpcoming(
+        s,
+        projectUpcoming(s, from: from),
+        from: from,
+      );
 
       expect(sum.expectedInflows, 3000);
       expect(sum.projectedMonthEnd, closeTo(3600, 0.01));
@@ -343,7 +357,11 @@ void main() {
       s.addAccount(_acct(opening: 2500, type: AccountType.credit));
       s.addAccount(_acct(opening: 9000, type: AccountType.investment));
       final from = DateTime(2026, 7, 21);
-      final sum = summarizeUpcoming(s, projectUpcoming(s, from: from), from: from);
+      final sum = summarizeUpcoming(
+        s,
+        projectUpcoming(s, from: from),
+        from: from,
+      );
       expect(sum.liquidBalance, 6300);
     });
 
@@ -352,14 +370,22 @@ void main() {
       s.addAccount(_acct(opening: 300));
       s.addTransaction(_recurring(amount: 1200, due: DateTime(2026, 7, 25)));
       final from = DateTime(2026, 7, 21);
-      final sum = summarizeUpcoming(s, projectUpcoming(s, from: from), from: from);
+      final sum = summarizeUpcoming(
+        s,
+        projectUpcoming(s, from: from),
+        from: from,
+      );
       expect(sum.safeToSpend, closeTo(-900, 0.01));
     });
 
     test('an empty store summarizes to zeroes', () {
       final s = _newStore();
       final from = DateTime(2026, 7, 21);
-      final sum = summarizeUpcoming(s, projectUpcoming(s, from: from), from: from);
+      final sum = summarizeUpcoming(
+        s,
+        projectUpcoming(s, from: from),
+        from: from,
+      );
       expect(sum.isEmpty, isTrue);
       expect(sum.projectedMonthEnd, 0);
     });
@@ -368,24 +394,22 @@ void main() {
   group('groupUpcomingByDay', () {
     test('collapses same-day items into one bucket, in order', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 16,
-        due: DateTime(2026, 8, 1, 9),
-        note: 'Netflix',
-      ));
-      s.addTransaction(_recurring(
-        amount: 3400,
-        due: DateTime(2026, 8, 1, 17),
-        type: TransactionType.income,
-        note: 'Salary',
-      ));
-      s.addTransaction(_recurring(
-        amount: 1200,
-        due: DateTime(2026, 7, 25),
-      ));
+      s.addTransaction(
+        _recurring(amount: 16, due: DateTime(2026, 8, 1, 9), note: 'Netflix'),
+      );
+      s.addTransaction(
+        _recurring(
+          amount: 3400,
+          due: DateTime(2026, 8, 1, 17),
+          type: TransactionType.income,
+          note: 'Salary',
+        ),
+      );
+      s.addTransaction(_recurring(amount: 1200, due: DateTime(2026, 7, 25)));
 
-      final groups =
-          groupUpcomingByDay(projectUpcoming(s, from: DateTime(2026, 7, 21)));
+      final groups = groupUpcomingByDay(
+        projectUpcoming(s, from: DateTime(2026, 7, 21)),
+      );
       expect(groups.length, 2);
       expect(groups[0].day, DateTime(2026, 7, 25));
       expect(groups[0].items.length, 1);
@@ -403,11 +427,13 @@ void main() {
       final s = _newStore();
       final a = _acct(opening: 0);
       s.addAccount(a);
-      s.addTransaction(_recurring(
-        amount: 100,
-        due: DateTime.now().subtract(const Duration(days: 1)),
-        accountId: a.id,
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 100,
+          due: DateTime.now().subtract(const Duration(days: 1)),
+          accountId: a.id,
+        ),
+      );
 
       final posted = s.generateRecurring();
       expect(posted, hasLength(1));
@@ -422,17 +448,20 @@ void main() {
 
     test('nothing due means nothing posted and no notice', () {
       final s = _newStore();
-      s.addTransaction(_recurring(
-        amount: 100,
-        due: DateTime.now().add(const Duration(days: 5)),
-      ));
+      s.addTransaction(
+        _recurring(
+          amount: 100,
+          due: DateTime.now().add(const Duration(days: 5)),
+        ),
+      );
       expect(s.generateRecurring(), isEmpty);
       expect(s.takeRecurringNotice(), isEmpty);
     });
   });
 
   group('projectUpcoming — debt repayment plans', () {
-    Debt owed({double? plan, bool theyOweMe = true, double amount = 600}) => Debt(
+    Debt owed({double? plan, bool theyOweMe = true, double amount = 600}) =>
+        Debt(
           person: 'Rahul',
           amount: amount,
           theyOweMe: theyOweMe,
@@ -458,21 +487,28 @@ void main() {
     test('money they owe me comes in; money I owe goes out', () {
       final s = _newStore();
       s.addDebt(owed(plan: 200));
-      expect(projectUpcoming(s, from: DateTime(2026, 6, 1)).first.isInflow,
-          isTrue);
+      expect(
+        projectUpcoming(s, from: DateTime(2026, 6, 1)).first.isInflow,
+        isTrue,
+      );
 
       final t = _newStore();
       t.addDebt(owed(plan: 200, theyOweMe: false));
-      expect(projectUpcoming(t, from: DateTime(2026, 6, 1)).first.isInflow,
-          isFalse);
+      expect(
+        projectUpcoming(t, from: DateTime(2026, 6, 1)).first.isInflow,
+        isFalse,
+      );
     });
 
     test('the final instalment is only what is left, not a full one', () {
       final s = _newStore();
       // 500 owed, 200 a month — the third payment should be 100.
       s.addDebt(owed(plan: 200, amount: 500));
-      final all = projectUpcoming(s,
-          from: DateTime(2026, 1, 16), horizonDays: 365);
+      final all = projectUpcoming(
+        s,
+        from: DateTime(2026, 1, 16),
+        horizonDays: 365,
+      );
       expect(all.length, 3);
       expect(all.last.amount, closeTo(100, 0.01));
     });
@@ -490,8 +526,11 @@ void main() {
       final d = owed(plan: 200, amount: 600);
       s.addDebt(d);
       s.repayDebt(d, 400, null);
-      final all = projectUpcoming(s,
-          from: DateTime(2026, 1, 16), horizonDays: 365);
+      final all = projectUpcoming(
+        s,
+        from: DateTime(2026, 1, 16),
+        horizonDays: 365,
+      );
       // Only 200 left, so a single instalment remains.
       expect(all.length, 1);
       expect(all.single.amount, closeTo(200, 0.01));

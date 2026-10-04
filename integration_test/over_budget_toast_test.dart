@@ -35,13 +35,15 @@ void main() {
 
     // ₹8,000 Food budget with ₹7,500 already spent this month.
     store.setBudget(TransactionCategory.food, 8000);
-    store.addTransaction(Transaction(
-      note: 'Groceries run',
-      amount: 7500,
-      category: TransactionCategory.food,
-      type: TransactionType.expense,
-      date: DateTime.now(),
-    ));
+    store.addTransaction(
+      Transaction(
+        note: 'Groceries run',
+        amount: 7500,
+        category: TransactionCategory.food,
+        type: TransactionType.expense,
+        date: DateTime.now(),
+      ),
+    );
 
     // ── Launch the real HomeShell (skips AppRoot's native widget bridge, which
     // needs an App Group that isn't configured under `flutter test`) ─────────
@@ -60,15 +62,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    debugPrint('[toast-test] plus icons found: '
-        '${find.byIcon(sfIcon('plus')).evaluate().length}');
+    debugPrint(
+      '[toast-test] plus icons found: '
+      '${find.byIcon(sfIcon('plus')).evaluate().length}',
+    );
     // Open the add-transaction screen from the tab bar's plus button.
     await tester.tap(find.byIcon(sfIcon('plus')).first);
     await tester.pumpAndSettle();
-    debugPrint('[toast-test] on add screen: '
-        '${find.text('ADD TRANSACTION').evaluate().isNotEmpty}, '
-        'Food chips: ${find.text('Food').evaluate().length}, '
-        'TextFields: ${find.byType(TextField).evaluate().length}');
+    debugPrint(
+      '[toast-test] on add screen: '
+      '${find.text('Add transaction').evaluate().isNotEmpty}, '
+      'Food chips: ${find.text('Food').evaluate().length}, '
+      'TextFields: ${find.byType(TextField).evaluate().length}',
+    );
 
     // Pick the Food category and enter an amount that tips it over budget.
     await tester.tap(find.text('Food').first);
@@ -80,10 +86,15 @@ void main() {
     // into view before tapping (target the button widget, not the identically
     // labelled header).
     final submit = find.widgetWithText(NeoPopButton, 'ADD TRANSACTION');
-    await tester.scrollUntilVisible(submit, 300,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      submit,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
-    debugPrint('[toast-test] submit buttons found: ${submit.evaluate().length}');
+    debugPrint(
+      '[toast-test] submit buttons found: ${submit.evaluate().length}',
+    );
 
     // Save. Do NOT pumpAndSettle here — the toast auto-dismisses after 3.5s,
     // and settling would advance past that timer and hide it. Pump fixed
@@ -92,9 +103,11 @@ void main() {
     await tester.pump(); // start the pop
     await tester.pump(const Duration(milliseconds: 400)); // route pops out
     await tester.pump(const Duration(milliseconds: 500)); // toast slides in
-    debugPrint('[toast-test] transactions now: ${store.transactions.length}; '
-        'toast text present: '
-        '${find.textContaining('Over Food Budget').evaluate().isNotEmpty}');
+    debugPrint(
+      '[toast-test] transactions now: ${store.transactions.length}; '
+      'toast text present: '
+      '${find.textContaining('Over Food Budget').evaluate().isNotEmpty}',
+    );
 
     // Capture whatever is on screen for inspection.
     await binding.convertFlutterSurfaceToImage();

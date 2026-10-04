@@ -165,6 +165,55 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The amounts the Quick Log widget offers as one-tap buttons. Stored as
+  /// strings because SharedPreferences has no double-list; empty means "never
+  /// customised", which falls back to [defaultQuickPresets] for the currency.
+  ///
+  /// A tap logs one of these without any UI, so they have to be plausible in
+  /// the user's own currency — ₹100 and $100 are not the same suggestion.
+  List<double> get quickCapturePresets {
+    final raw = _p.getStringList('quickCapturePresets');
+    if (raw == null || raw.isEmpty) return defaultQuickPresets(currencyCode);
+    final parsed = raw.map(double.tryParse).whereType<double>().toList();
+    return parsed.isEmpty ? defaultQuickPresets(currencyCode) : parsed;
+  }
+
+  set quickCapturePresets(List<double> v) {
+    _p.setStringList(
+      'quickCapturePresets',
+      v.map((e) => e.toString()).toList(),
+    );
+    notifyListeners();
+  }
+
+  /// Sensible starting amounts for a currency. Currencies whose everyday note
+  /// denominations run large (a ₹100 coffee, a ¥1000 lunch) need a different
+  /// ladder from ones where a coffee is 5 — otherwise every preset is either
+  /// absurdly small or absurdly large on first launch.
+  static List<double> defaultQuickPresets(String code) {
+    const largeUnit = {
+      'INR',
+      'PKR',
+      'BDT',
+      'LKR',
+      'JPY',
+      'KRW',
+      'IDR',
+      'VND',
+      'NGN',
+      'KES',
+      'UGX',
+      'TZS',
+      'PHP',
+      'THB',
+      'HUF',
+      'CLP',
+    };
+    return largeUnit.contains(code)
+        ? const [100, 500, 1000]
+        : const [5, 10, 20];
+  }
+
   bool get hasCompletedAccountSetup => _b('hasCompletedAccountSetup', false);
   set hasCompletedAccountSetup(bool v) {
     _p.setBool('hasCompletedAccountSetup', v);
@@ -202,7 +251,9 @@ class SettingsStore extends ChangeNotifier {
   }
 
   TimeOfDay get reminderTime => TimeOfDay(
-      hour: reminderMinuteOfDay ~/ 60, minute: reminderMinuteOfDay % 60);
+    hour: reminderMinuteOfDay ~/ 60,
+    minute: reminderMinuteOfDay % 60,
+  );
 
   /// A line the user wrote for their own nightly nudge. Empty until they set
   /// one; only ever shown when [reminderMessageMode] asks for it.
@@ -249,7 +300,9 @@ class SettingsStore extends ChangeNotifier {
     // avoids — treat "none" as "every day" instead.
     final days = v.isEmpty ? {1, 2, 3, 4, 5, 6, 7} : v;
     _p.setStringList(
-        'reminderDays', (days.toList()..sort()).map((d) => '$d').toList());
+      'reminderDays',
+      (days.toList()..sort()).map((d) => '$d').toList(),
+    );
     notifyListeners();
   }
 
@@ -300,7 +353,8 @@ class SettingsStore extends ChangeNotifier {
 
   /// The month (`yyyymm`) an over-budget alert has already fired for. Resets
   /// naturally each month because the number no longer matches.
-  int get lastOverBudgetAlertMonth => _p.getInt('lastOverBudgetAlertMonth') ?? 0;
+  int get lastOverBudgetAlertMonth =>
+      _p.getInt('lastOverBudgetAlertMonth') ?? 0;
   set lastOverBudgetAlertMonth(int v) {
     _p.setInt('lastOverBudgetAlertMonth', v);
     // No notifyListeners: a dedup marker changes nothing on screen.
@@ -320,36 +374,40 @@ class SettingsStore extends ChangeNotifier {
   // amountsHidden (a momentary privacy toggle, not data).
 
   Map<String, dynamic> backupSnapshot() => {
-        'currencyCode': currencyCode,
-        'monthlyBudget': monthlyBudget,
-        'userName': userName,
-        'appearanceMode': appearanceMode,
-        'defaultTransactionType': defaultTransactionType,
-        'hapticsEnabled': hapticsEnabled,
-        'hasCompletedAccountSetup': hasCompletedAccountSetup,
-        'budgetRollover': budgetRollover,
-        'reminderMinuteOfDay': reminderMinuteOfDay,
-        // How the reminders should read — but not which are switched on. Like
-        // reminderMinuteOfDay above, the shape travels; the on/off state does
-        // not, because notification permission belongs to the device, not the
-        // backup (so alertBillsDue, weeklySummary, etc. are deliberately absent).
-        'reminderCustomMessage': reminderCustomMessage,
-        'reminderMessageMode': reminderMessageMode,
-        'reminderTone': reminderTone,
-        'reminderDays': (reminderDays.toList()..sort()).map((d) => '$d').toList(),
-        'weeklySummaryDay': weeklySummaryDay,
-      };
+    'currencyCode': currencyCode,
+    'monthlyBudget': monthlyBudget,
+    'userName': userName,
+    'appearanceMode': appearanceMode,
+    'defaultTransactionType': defaultTransactionType,
+    'hapticsEnabled': hapticsEnabled,
+    'hasCompletedAccountSetup': hasCompletedAccountSetup,
+    'budgetRollover': budgetRollover,
+    'reminderMinuteOfDay': reminderMinuteOfDay,
+    // How the reminders should read — but not which are switched on. Like
+    // reminderMinuteOfDay above, the shape travels; the on/off state does
+    // not, because notification permission belongs to the device, not the
+    // backup (so alertBillsDue, weeklySummary, etc. are deliberately absent).
+    'reminderCustomMessage': reminderCustomMessage,
+    'reminderMessageMode': reminderMessageMode,
+    'reminderTone': reminderTone,
+    'reminderDays': (reminderDays.toList()..sort()).map((d) => '$d').toList(),
+    'weeklySummaryDay': weeklySummaryDay,
+  };
 
   void applyBackup(Map snapshot) {
     T pick<T>(String k, T fallback) =>
         snapshot[k] is T ? snapshot[k] as T : fallback;
     _p.setString('currencyCode', pick('currencyCode', currencyCode));
-    _p.setDouble('monthlyBudget',
-        (snapshot['monthlyBudget'] as num?)?.toDouble() ?? monthlyBudget);
+    _p.setDouble(
+      'monthlyBudget',
+      (snapshot['monthlyBudget'] as num?)?.toDouble() ?? monthlyBudget,
+    );
     _p.setString('userName', pick('userName', userName));
     _p.setString('appearanceMode', pick('appearanceMode', appearanceMode));
-    _p.setString('defaultTransactionType',
-        pick('defaultTransactionType', defaultTransactionType));
+    _p.setString(
+      'defaultTransactionType',
+      pick('defaultTransactionType', defaultTransactionType),
+    );
     _p.setBool('hapticsEnabled', pick('hapticsEnabled', hapticsEnabled));
     // A restored backup always has data behind it — never bounce the user
     // back into first-run setup.
@@ -357,22 +415,29 @@ class SettingsStore extends ChangeNotifier {
     _p.setBool('budgetRollover', pick('budgetRollover', budgetRollover));
     // The preferred time carries over, but not the on/off state — notification
     // permission belongs to the device, not the backup.
-    _p.setInt('reminderMinuteOfDay',
-        (snapshot['reminderMinuteOfDay'] as num?)?.toInt() ??
-            reminderMinuteOfDay);
+    _p.setInt(
+      'reminderMinuteOfDay',
+      (snapshot['reminderMinuteOfDay'] as num?)?.toInt() ?? reminderMinuteOfDay,
+    );
     // The rest of the reminder shape — how it reads, which days, the weekly
     // day — carries over the same way, again without touching what's on.
-    _p.setString('reminderCustomMessage',
-        pick('reminderCustomMessage', reminderCustomMessage));
     _p.setString(
-        'reminderMessageMode', pick('reminderMessageMode', reminderMessageMode));
+      'reminderCustomMessage',
+      pick('reminderCustomMessage', reminderCustomMessage),
+    );
+    _p.setString(
+      'reminderMessageMode',
+      pick('reminderMessageMode', reminderMessageMode),
+    );
     _p.setString('reminderTone', pick('reminderTone', reminderTone));
     final days = snapshot['reminderDays'];
     if (days is List) {
       _p.setStringList('reminderDays', days.map((d) => '$d').toList());
     }
-    _p.setInt('weeklySummaryDay',
-        (snapshot['weeklySummaryDay'] as num?)?.toInt() ?? weeklySummaryDay);
+    _p.setInt(
+      'weeklySummaryDay',
+      (snapshot['weeklySummaryDay'] as num?)?.toInt() ?? weeklySummaryDay,
+    );
     notifyListeners();
   }
 }

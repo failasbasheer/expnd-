@@ -36,45 +36,56 @@ DateTime _daysAgo(int d) => _today.subtract(Duration(days: d));
 Future<AppStore> _seeded() async {
   final store = AppStore(_FakeBox());
   final checking = Account(
-      name: 'HDFC Checking',
-      type: AccountType.bank,
-      currencyCode: 'USD',
-      balance: 6400);
+    name: 'HDFC Checking',
+    type: AccountType.bank,
+    currencyCode: 'USD',
+    balance: 6400,
+  );
   store.addAccount(checking);
 
   // Two today, three well before it — enough that a date filter has something
   // to exclude.
-  store.addTransaction(Transaction(
-    note: 'Coffee today',
-    amount: 4,
-    category: TransactionCategory.food,
-    type: TransactionType.expense,
-    date: _today,
-    accountId: checking.id,
-    tags: const ['osaka'],
-  ));
-  store.addTransaction(Transaction(
-    note: 'Fuel today',
-    amount: 62,
-    category: TransactionCategory.transport,
-    type: TransactionType.expense,
-    date: _today,
-    accountId: checking.id,
-  ));
-  for (var i = 1; i <= 3; i++) {
-    store.addTransaction(Transaction(
-      note: 'Older spend $i',
-      amount: 20.0 * i,
-      category: TransactionCategory.groceries,
+  store.addTransaction(
+    Transaction(
+      note: 'Coffee today',
+      amount: 4,
+      category: TransactionCategory.food,
       type: TransactionType.expense,
-      date: _daysAgo(i + 4),
+      date: _today,
       accountId: checking.id,
-    ));
+      tags: const ['osaka'],
+    ),
+  );
+  store.addTransaction(
+    Transaction(
+      note: 'Fuel today',
+      amount: 62,
+      category: TransactionCategory.transport,
+      type: TransactionType.expense,
+      date: _today,
+      accountId: checking.id,
+    ),
+  );
+  for (var i = 1; i <= 3; i++) {
+    store.addTransaction(
+      Transaction(
+        note: 'Older spend $i',
+        amount: 20.0 * i,
+        category: TransactionCategory.groceries,
+        type: TransactionType.expense,
+        date: _daysAgo(i + 4),
+        accountId: checking.id,
+      ),
+    );
   }
   return store;
 }
 
-Future<void> _pump(WidgetTester tester, {DateTime? start, DateTime? end}) async {
+Future<void> _pump(
+  WidgetTester tester, {
+  DateTime? start,
+  DateTime? end,
+}) async {
   final store = await _seeded();
   SharedPreferences.setMockInitialValues({});
   final settings = await SettingsStore.create();
@@ -98,19 +109,38 @@ Future<void> _pump(WidgetTester tester, {DateTime? start, DateTime? end}) async 
   await tester.pumpAndSettle();
 }
 
-final _showFilters =
-    find.bySemanticsLabel('Show category, account and tag filters');
-final _hideFilters =
-    find.bySemanticsLabel('Hide category, account and tag filters');
+final _showFilters = find.byTooltip('Show category, account and tag filters');
+final _hideFilters = find.byTooltip('Hide category, account and tag filters');
 
 void main() {
+  testWidgets('clear filters restores all entries after an empty search', (
+    tester,
+  ) async {
+    await _pump(tester, start: _today, end: _today);
+    await tester.enterText(find.byType(TextField).first, 'does not exist');
+    await tester.pumpAndSettle();
+    expect(find.text('No results'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('5 transactions'), findsOneWidget);
+    expect(find.text('Clear filters'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      isEmpty,
+    );
+  });
+
   testWidgets('opens with only search and the type row', (tester) async {
     await _pump(tester);
 
     // Type chips stay out — they are the filter people reach for most.
     // "TRANSFER" identifies the row unambiguously: INCOME/EXPENSE also label
     // every transaction row in the list below.
-    expect(find.text('TRANSFER'), findsOneWidget);
+    expect(find.text('Transfer'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Transfer')).dy,
+      tester.getTopLeft(find.text('All')).dy,
+    );
 
     // The three collapsible rows are not laid out at all.
     expect(find.text('ALL ACCOUNTS'), findsNothing);
@@ -120,8 +150,9 @@ void main() {
     expect(_showFilters, findsOneWidget);
   });
 
-  testWidgets('the toggle reveals and hides the secondary rows',
-      (tester) async {
+  testWidgets('the toggle reveals and hides the secondary rows', (
+    tester,
+  ) async {
     await _pump(tester);
 
     await tester.tap(_showFilters);
@@ -159,8 +190,9 @@ void main() {
     expect(find.text('1'), findsWidgets);
   });
 
-  testWidgets('an initial date range opens already narrowed to it',
-      (tester) async {
+  testWidgets('an initial date range opens already narrowed to it', (
+    tester,
+  ) async {
     await _pump(tester, start: _today, end: _today);
 
     // Only the two transactions dated today survive the seeded range.
@@ -169,8 +201,9 @@ void main() {
     expect(find.text('Older spend 1'), findsNothing);
   });
 
-  testWidgets('with no initial range every transaction is listed',
-      (tester) async {
+  testWidgets('with no initial range every transaction is listed', (
+    tester,
+  ) async {
     await _pump(tester);
     expect(find.text('5 transactions'), findsOneWidget);
   });

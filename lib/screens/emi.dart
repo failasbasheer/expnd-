@@ -9,6 +9,7 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/neopop.dart';
+import '../widgets/money_field.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Credit summary + ongoing EMIs (shown under a credit-card account)
@@ -41,7 +42,7 @@ class AccountLoansSection extends StatelessWidget {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -49,62 +50,79 @@ class AccountLoansSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (isCredit) ...[
-            Text('CREDIT SUMMARY',
+              Text(
+                'CREDIT SUMMARY',
                 style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3,
+                  color: oc.muted,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (limit <= 0)
+                Text(
+                  'Set a credit limit for this card to track available credit and utilization.',
+                  style: TextStyle(fontSize: 12, color: oc.dimmed),
+                )
+              else ...[
+                Text(
+                  'AVAILABLE',
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: oc.muted)),
-            const SizedBox(height: 12),
-            if (limit <= 0)
-              Text(
-                  'Set a credit limit for this card to track available credit and utilization.',
-                  style: TextStyle(fontSize: 12, color: oc.dimmed))
-            else ...[
-              Text('AVAILABLE',
+                    letterSpacing: 1.5,
+                    color: oc.muted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  formatCurrency(available, code),
                   style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: oc.muted)),
-              const SizedBox(height: 2),
-              Text(formatCurrency(available, code),
-                  style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: oc.text)),
-              const SizedBox(height: 10),
-              _UtilRow(fraction: util),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Text('${(util * 100).toStringAsFixed(0)}% utilized',
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: oc.text,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _UtilRow(fraction: util),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      '${(util * 100).toStringAsFixed(0)}% utilized',
                       style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: oc.muted)),
-                  const Spacer(),
-                  Text(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: oc.muted,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
                       '${formatCurrency(used, code)} of ${formatCurrency(limit, code)}',
-                      style: TextStyle(fontSize: 11, color: oc.dimmed)),
-                ],
-              ),
-            ],
-            const SizedBox(height: 16),
-            Container(height: 1, color: oc.border),
-            const SizedBox(height: 12),
+                      style: TextStyle(fontSize: 11, color: oc.dimmed),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              Container(height: 1, color: oc.border),
+              const SizedBox(height: 12),
             ],
             Row(
               children: [
                 Expanded(
-                  child: Text(isCredit ? 'ONGOING EMIs' : 'LOANS & EMIs',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                          color: oc.muted)),
+                  child: Text(
+                    isCredit ? 'ONGOING EMIs' : 'LOANS & EMIs',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                      color: oc.muted,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 NeoPopButton(
@@ -115,19 +133,24 @@ class AccountLoansSection extends StatelessWidget {
                   depth: 3,
                   cornerRadius: 4,
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(sfIcon('plus'), size: 10, color: ExpndColors.ink),
                         const SizedBox(width: 5),
-                        Text(isCredit ? 'ADD EMI' : 'ADD LOAN',
-                            style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
-                                color: ExpndColors.ink)),
+                        Text(
+                          isCredit ? 'Add loan' : 'ADD LOAN',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            color: ExpndColors.ink,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -139,10 +162,11 @@ class AccountLoansSection extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                    isCredit
-                        ? 'No EMIs yet. Add a loan or purchase installment to track it here — it reduces your available credit as it runs.'
-                        : 'No loans yet. Add a car, personal or home loan to track its balance, interest and monthly payment here.',
-                    style: TextStyle(fontSize: 12, color: oc.dimmed)),
+                  isCredit
+                      ? 'No EMIs yet. Add a loan or purchase installment to track it here — it reduces your available credit as it runs.'
+                      : 'No loans yet. Add a car, personal or home loan to track its balance, interest and monthly payment here.',
+                  style: TextStyle(fontSize: 12, color: oc.dimmed),
+                ),
               )
             else
               for (int i = 0; i < emis.length; i++) ...[
@@ -182,20 +206,26 @@ class _EmiRow extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(emi.name.isEmpty ? 'EMI' : emi.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: oc.text)),
+                child: Text(
+                  emi.name.isEmpty ? 'EMI' : emi.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: oc.text,
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
-              Text('${formatCurrency(emi.monthlyAmount, code)}/mo',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: oc.accent)),
+              Text(
+                '${formatCurrency(emi.monthlyAmount, code)}/mo',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: oc.accent,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -206,7 +236,8 @@ class _EmiRow extends StatelessWidget {
               minHeight: 5,
               backgroundColor: oc.border,
               valueColor: AlwaysStoppedAnimation(
-                  done ? ExpndColors.green : oc.accent),
+                done ? ExpndColors.green : oc.accent,
+              ),
             ),
           ),
           const SizedBox(height: 6),
@@ -214,76 +245,90 @@ class _EmiRow extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                    done
-                        ? 'Completed · ${emi.tenureMonths} mo'
-                        : 'Paid ${emi.monthsPaid}/${emi.tenureMonths} mo',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: oc.muted)),
+                  done
+                      ? 'Completed · ${emi.tenureMonths} mo'
+                      : 'Paid ${emi.monthsPaid}/${emi.tenureMonths} mo',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: oc.muted,
+                  ),
+                ),
               ),
               const Spacer(),
               Text(
-                  done
-                      ? 'Closed'
-                      : '${formatCurrency(emi.remainingAmount, code)} left',
-                  style: TextStyle(fontSize: 11, color: oc.dimmed)),
+                done
+                    ? 'Closed'
+                    : '${formatCurrency(emi.remainingAmount, code)} left',
+                style: TextStyle(fontSize: 11, color: oc.dimmed),
+              ),
             ],
           ),
           // What has actually been recorded as paid, which the schedule above
           // can't say — it only knows how many months have gone by.
-          Builder(builder: (context) {
-            final store = context.watch<AppStore>();
-            final logged = store.installmentsOn(emi).length;
-            final paidThisMonth = store.isInstallmentPaid(emi, DateTime.now());
-            if (done && logged == 0) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
+          Builder(
+            builder: (context) {
+              final store = context.watch<AppStore>();
+              final logged = store.installmentsOn(emi).length;
+              final paidThisMonth = store.isInstallmentPaid(
+                emi,
+                DateTime.now(),
+              );
+              if (done && logged == 0) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
                         logged == 0
                             ? 'No payments recorded'
                             : '$logged recorded · '
-                                '${formatCurrency(store.paidOn(emi), code)}',
+                                  '${formatCurrency(store.paidOn(emi), code)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 10, color: oc.dimmed)),
-                  ),
-                  const Spacer(),
-                  if (!done)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: paidThisMonth
-                          ? null
-                          : () => showPayInstallment(context, emi),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
+                        style: TextStyle(fontSize: 10, color: oc.dimmed),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!done)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: paidThisMonth
+                            ? null
+                            : () => showPayInstallment(context, emi),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
                               color: paidThisMonth
                                   ? oc.border
                                   : ExpndColors.gold.withValues(alpha: 0.6),
-                              width: 1.5),
-                        ),
-                        child: Text(
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Text(
                             paidThisMonth ? 'PAID THIS MONTH' : 'MARK PAID',
                             style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1,
-                                color: paidThisMonth ? oc.dimmed : oc.accent)),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                              color: paidThisMonth ? oc.dimmed : oc.accent,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          }),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -301,8 +346,8 @@ class _UtilRow extends StatelessWidget {
     final color = f < 0.3
         ? ExpndColors.green
         : f < 0.75
-            ? const Color(0xFFF59E0B)
-            : ExpndColors.red;
+        ? const Color(0xFFF59E0B)
+        : ExpndColors.red;
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
       child: LinearProgressIndicator(
@@ -319,8 +364,11 @@ class _UtilRow extends StatelessWidget {
 // Add / edit EMI — doubles as a live EMI calculator
 // ─────────────────────────────────────────────────────────────────────────────
 
-Future<void> showAddEmi(BuildContext context,
-    {required String accountId, Emi? editing}) {
+Future<void> showAddEmi(
+  BuildContext context, {
+  required String accountId,
+  Emi? editing,
+}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -356,13 +404,13 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
 
   /// A throwaway model used purely to run the amortization math live.
   Emi get _preview => Emi(
-        accountId: widget.accountId,
-        name: _nameCtrl.text,
-        principal: _principal,
-        annualRate: _rate,
-        tenureMonths: _tenure,
-        startDate: _startDate,
-      );
+    accountId: widget.accountId,
+    name: _nameCtrl.text,
+    principal: _principal,
+    annualRate: _rate,
+    tenureMonths: _tenure,
+    startDate: _startDate,
+  );
 
   @override
   void initState() {
@@ -401,14 +449,16 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
       e.startDate = _startDate;
       store.updateEmi();
     } else {
-      store.addEmi(Emi(
-        accountId: widget.accountId,
-        name: _nameCtrl.text.trim(),
-        principal: _principal,
-        annualRate: _rate,
-        tenureMonths: _tenure,
-        startDate: _startDate,
-      ));
+      store.addEmi(
+        Emi(
+          accountId: widget.accountId,
+          name: _nameCtrl.text.trim(),
+          principal: _principal,
+          annualRate: _rate,
+          tenureMonths: _tenure,
+          startDate: _startDate,
+        ),
+      );
     }
     FocusManager.instance.primaryFocus?.unfocus();
     Navigator.of(context).pop();
@@ -438,17 +488,23 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
         children: [
           const SizedBox(height: 10),
           Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: oc.border, borderRadius: BorderRadius.circular(2))),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: oc.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(_isEditing ? 'EDIT EMI' : 'ADD EMI',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: oc.text)),
+          Text(
+            _isEditing ? 'EDIT EMI' : 'Add loan',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              color: oc.text,
+            ),
+          ),
           Expanded(
             child: ListView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -457,7 +513,7 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                 // Live calculation summary — this is the EMI calculator.
                 _calcCard(oc, code, p),
                 const SizedBox(height: 22),
-                _label('EMI NAME', oc),
+                _label('Loan name', oc),
                 const SizedBox(height: 8),
                 _field(
                   oc,
@@ -466,13 +522,14 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                     onChanged: (_) => setState(() {}),
                     style: TextStyle(fontSize: 14, color: oc.text),
                     decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        hintText: 'e.g. iPhone, Car Loan'),
+                      border: InputBorder.none,
+                      isDense: true,
+                      hintText: 'e.g. iPhone, Car Loan',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 18),
-                _label('LOAN AMOUNT (PRINCIPAL)', oc),
+                _label('Loan amount (principal)', oc),
                 const SizedBox(height: 8),
                 _amountField(oc, code, _principalCtrl),
                 const SizedBox(height: 18),
@@ -483,7 +540,7 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _label('INTEREST % / YR', oc),
+                          _label('Annual interest (%)', oc),
                           const SizedBox(height: 8),
                           _field(
                             oc,
@@ -491,13 +548,15 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                               controller: _rateCtrl,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                      decimal: true),
+                                    decimal: true,
+                                  ),
                               onChanged: (_) => setState(() {}),
                               style: TextStyle(fontSize: 16, color: oc.text),
                               decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  hintText: '0.0'),
+                                border: InputBorder.none,
+                                isDense: true,
+                                hintText: '0.0',
+                              ),
                             ),
                           ),
                         ],
@@ -508,7 +567,7 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _label('TENURE (MONTHS)', oc),
+                          _label('Term (months)', oc),
                           const SizedBox(height: 8),
                           _field(
                             oc,
@@ -522,9 +581,10 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                               onChanged: (_) => setState(() {}),
                               style: TextStyle(fontSize: 16, color: oc.text),
                               decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  hintText: '12'),
+                                border: InputBorder.none,
+                                isDense: true,
+                                hintText: '12',
+                              ),
                             ),
                           ),
                         ],
@@ -533,7 +593,7 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                   ],
                 ),
                 const SizedBox(height: 18),
-                _label('START DATE', oc),
+                _label('Start date', oc),
                 const SizedBox(height: 8),
                 GestureDetector(
                   onTap: () async {
@@ -559,11 +619,14 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                       children: [
                         Icon(sfIcon('calendar'), size: 14, color: oc.muted),
                         const SizedBox(width: 10),
-                        Text(_fmtDate(_startDate),
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: oc.text)),
+                        Text(
+                          _fmtDate(_startDate),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: oc.text,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -580,13 +643,16 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                     width: double.infinity,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(_isEditing ? 'SAVE CHANGES' : 'ADD EMI',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
-                              color: _isValid ? ExpndColors.ink : oc.dimmed)),
+                      child: Text(
+                        _isEditing ? 'Save changes' : 'Add loan',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: _isValid ? ExpndColors.ink : oc.dimmed,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -594,10 +660,13 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                   const SizedBox(height: 10),
                   TextButton(
                     onPressed: _delete,
-                    child: Text('Delete EMI',
-                        style: TextStyle(
-                            color: ExpndColors.red,
-                            fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Delete EMI',
+                      style: TextStyle(
+                        color: ExpndColors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -614,38 +683,47 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
       faceColor: ExpndColors.gold,
       depthColor: ExpndColors.goldDark,
       borderColor: ExpndColors.goldDark,
-      depth: 5,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('MONTHLY EMI',
-                style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: ExpndColors.ink.withValues(alpha: 0.55))),
+            Text(
+              'MONTHLY EMI',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
+                color: ExpndColors.ink.withValues(alpha: 0.55),
+              ),
+            ),
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Text(
-                  valid ? formatCurrency(p.monthlyAmount, code) : '—',
-                  style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w900,
-                      color: ExpndColors.ink)),
+                valid ? formatCurrency(p.monthlyAmount, code) : '—',
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w700,
+                  color: ExpndColors.ink,
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                _calcStat('TOTAL PAYABLE',
-                    valid ? formatCurrency(p.totalPayable, code) : '—'),
+                _calcStat(
+                  'TOTAL PAYABLE',
+                  valid ? formatCurrency(p.totalPayable, code) : '—',
+                ),
                 const SizedBox(width: 16),
-                _calcStat('TOTAL INTEREST',
-                    valid ? formatCurrency(p.totalInterest, code) : '—'),
+                _calcStat(
+                  'TOTAL INTEREST',
+                  valid ? formatCurrency(p.totalInterest, code) : '—',
+                ),
               ],
             ),
           ],
@@ -659,48 +737,24 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: TextStyle(
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                  color: ExpndColors.ink.withValues(alpha: 0.55))),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+              color: ExpndColors.ink.withValues(alpha: 0.55),
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: ExpndColors.ink)),
-        ],
-      ),
-    );
-  }
-
-  Widget _amountField(
-      ExpndColors oc, String code, TextEditingController ctrl) {
-    return _field(
-      oc,
-      child: Row(
-        children: [
-          Text(currencySymbol(code),
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: oc.accent)),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextField(
-              controller: ctrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: amountInputFormatters,
-              onChanged: (_) => setState(() {}),
-              style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold, color: oc.text),
-              decoration: const InputDecoration(
-                  border: InputBorder.none, isDense: true, hintText: '0.00'),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: ExpndColors.ink,
             ),
           ),
         ],
@@ -708,29 +762,53 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
     );
   }
 
+  Widget _amountField(
+    ExpndColors oc,
+    String code,
+    TextEditingController ctrl,
+  ) => MoneyField(
+    controller: ctrl,
+    currencyCode: code,
+    label: 'Loan amount',
+    onChanged: (_) => setState(() {}),
+  );
+
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   String _fmtDate(DateTime d) => '${_months[d.month - 1]} ${d.day}, ${d.year}';
 }
 
-Widget _label(String t, ExpndColors oc) => Text(t,
-    style: TextStyle(
-        fontSize: 9,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-        color: oc.muted));
+Widget _label(String t, ExpndColors oc) => Text(
+  t,
+  style: TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1.5,
+    color: oc.muted,
+  ),
+);
 
 Widget _field(ExpndColors oc, {required Widget child}) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: oc.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: oc.border, width: 1.5),
-      ),
-      child: child,
-    );
+  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+  decoration: BoxDecoration(
+    color: oc.surface,
+    borderRadius: BorderRadius.circular(8),
+    border: Border.all(color: oc.border, width: 1.5),
+  ),
+  child: child,
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mark an installment paid
@@ -768,7 +846,8 @@ class _PayInstallmentSheet extends StatefulWidget {
 class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
   String? _accountId;
   late final TextEditingController _amountCtrl = TextEditingController(
-      text: widget.emi.monthlyAmount.toStringAsFixed(2));
+    text: widget.emi.monthlyAmount.toStringAsFixed(2),
+  );
 
   @override
   void initState() {
@@ -776,10 +855,12 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
     final accounts = context.read<AppStore>().accounts;
     // Default to somewhere the money could plausibly come from — a bank or
     // cash account before the card the EMI is attached to.
-    final funding = accounts.where((a) =>
-        a.type == AccountType.bank ||
-        a.type == AccountType.cash ||
-        a.type == AccountType.savings);
+    final funding = accounts.where(
+      (a) =>
+          a.type == AccountType.bank ||
+          a.type == AccountType.cash ||
+          a.type == AccountType.savings,
+    );
     _accountId = funding.isNotEmpty
         ? funding.first.id
         : (accounts.isNotEmpty ? accounts.first.id : null);
@@ -806,7 +887,8 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
 
     return Container(
       constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85 - insets),
+        maxHeight: MediaQuery.of(context).size.height * 0.85 - insets,
+      ),
       margin: EdgeInsets.only(bottom: insets),
       decoration: BoxDecoration(
         color: oc.bg,
@@ -817,71 +899,60 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
         children: [
           const SizedBox(height: 10),
           Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: oc.border, borderRadius: BorderRadius.circular(2))),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: oc.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 10),
-          Text('MARK INSTALLMENT PAID',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: oc.text)),
+          Text(
+            'MARK INSTALLMENT PAID',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              color: oc.text,
+            ),
+          ),
           const SizedBox(height: 2),
           Text(
-              '${e.name.trim().isEmpty ? 'EMI' : e.name.trim()} · '
-              'installment $n of ${e.tenureMonths}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: oc.muted)),
+            '${e.name.trim().isEmpty ? 'EMI' : e.name.trim()} · '
+            'installment $n of ${e.tenureMonths}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: oc.muted),
+          ),
           Flexible(
             child: ListView(
               shrinkWrap: true,
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               children: [
-                _label('AMOUNT', oc),
+                _label('Amount', oc),
                 const SizedBox(height: 8),
-                _field(oc,
-                    child: Row(
-                      children: [
-                        Text(currencySymbol(code),
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: oc.accent)),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: TextField(
-                            controller: _amountCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            inputFormatters: amountInputFormatters,
-                            onChanged: (_) => setState(() {}),
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: oc.text),
-                            decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                isDense: true,
-                                hintText: '0.00'),
-                          ),
-                        ),
-                      ],
-                    )),
+                MoneyField(
+                  controller: _amountCtrl,
+                  currencyCode: code,
+                  label: 'Installment amount',
+                  autofocus: true,
+                  onChanged: (_) => setState(() {}),
+                ),
                 const SizedBox(height: 6),
                 Text(
-                    'Scheduled ${formatCurrency(e.monthlyAmount, code)} — '
-                    "edit if your lender's rounding differs.",
-                    style: TextStyle(fontSize: 10, color: oc.dimmed)),
+                  'Scheduled ${formatCurrency(e.monthlyAmount, code)} — '
+                  "edit if your lender's rounding differs.",
+                  style: TextStyle(fontSize: 10, color: oc.dimmed),
+                ),
                 const SizedBox(height: 20),
-                _label('PAY FROM', oc),
+                _label('Pay from', oc),
                 const SizedBox(height: 8),
                 if (accounts.isEmpty)
-                  Text('No accounts yet — the payment will be recorded without one.',
-                      style: TextStyle(fontSize: 12, color: oc.muted))
+                  Text(
+                    'No accounts yet — the payment will be recorded without one.',
+                    style: TextStyle(fontSize: 12, color: oc.muted),
+                  )
                 else
                   for (final a in accounts) _accountOption(oc, store, a, code),
                 const SizedBox(height: 20),
@@ -896,7 +967,11 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
   }
 
   Widget _accountOption(
-      ExpndColors oc, AppStore store, Account a, String code) {
+    ExpndColors oc,
+    AppStore store,
+    Account a,
+    String code,
+  ) {
     final selected = _accountId == a.id;
     final tint = hexColor(a.colorHex);
     final isCard = a.type == AccountType.credit;
@@ -910,36 +985,48 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? ExpndColors.gold.withValues(alpha: 0.12) : oc.surface,
+          color: selected
+              ? ExpndColors.gold.withValues(alpha: 0.12)
+              : oc.surface,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-              color: selected ? ExpndColors.gold : oc.border, width: 1.5),
+            color: selected ? ExpndColors.gold : oc.border,
+            width: 1.5,
+          ),
         ),
         child: Row(
           children: [
-            Icon(sfIcon(selected ? 'checkmark.circle.fill' : 'circle'),
-                size: 16, color: selected ? ExpndColors.gold : oc.dimmed),
+            Icon(
+              sfIcon(selected ? 'checkmark.circle.fill' : 'circle'),
+              size: 16,
+              color: selected ? ExpndColors.gold : oc.dimmed,
+            ),
             const SizedBox(width: 10),
             Icon(sfIcon(a.type.icon), size: 13, color: tint),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(a.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: oc.text)),
+              child: Text(
+                a.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: oc.text,
+                ),
+              ),
             ),
             const SizedBox(width: 8),
             Text(
-                isCard
-                    ? 'the card itself'
-                    : formatCurrency(store.balanceFor(a), code),
-                style: TextStyle(
-                    fontSize: 10,
-                    fontStyle: isCard ? FontStyle.italic : FontStyle.normal,
-                    color: oc.dimmed)),
+              isCard
+                  ? 'the card itself'
+                  : formatCurrency(store.balanceFor(a), code),
+              style: TextStyle(
+                fontSize: 10,
+                fontStyle: isCard ? FontStyle.italic : FontStyle.normal,
+                color: oc.dimmed,
+              ),
+            ),
           ],
         ),
       ),
@@ -950,10 +1037,11 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
     return NeoPopButton(
       onPressed: () {
         if (!_isValid) return;
-        context
-            .read<AppStore>()
-            .payEmiInstallment(widget.emi,
-                accountId: _accountId, amount: _amount);
+        context.read<AppStore>().payEmiInstallment(
+          widget.emi,
+          accountId: _accountId,
+          amount: _amount,
+        );
         Haptics.success();
         FocusManager.instance.primaryFocus?.unfocus();
         Navigator.of(context).pop(true);
@@ -970,15 +1058,21 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(sfIcon('checkmark.circle.fill'),
-                  size: 14, color: _isValid ? ExpndColors.ink : oc.dimmed),
+              Icon(
+                sfIcon('checkmark.circle.fill'),
+                size: 14,
+                color: _isValid ? ExpndColors.ink : oc.dimmed,
+              ),
               const SizedBox(width: 8),
-              Text('POST PAYMENT',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                      color: _isValid ? ExpndColors.ink : oc.dimmed)),
+              Text(
+                'POST PAYMENT',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: _isValid ? ExpndColors.ink : oc.dimmed,
+                ),
+              ),
             ],
           ),
         ),

@@ -11,7 +11,15 @@ flutter pub get
 flutter run          # pick a device/simulator
 ```
 
-Requires Flutter 3.44+. iOS needs CocoaPods (`brew install cocoapods`).
+Requires Flutter 3.44+ and iOS 17+. iOS builds need CocoaPods (`brew install cocoapods`).
+
+For a local preview with sample accounts, transactions, budgets, and goals:
+
+```bash
+flutter run --dart-define=EXPND_SEED_DEMO=true
+```
+
+Sample data is added once and preserves existing entries. Use a simulator for previews.
 
 ## Architecture
 
@@ -42,13 +50,14 @@ lib/
     currencies.dart         supported currencies + formatting
   widgets/neopop.dart       NeoPopElevated / NeoPopButton / NeoPopShine / NeoPopTag
   screens/
-    home_shell.dart         custom tab bar + FAB + dashboard + TransactionRow
+    home_shell.dart         labeled tab bar + add action + dashboard + TransactionRow
     add_transaction.dart    add/edit flow, categories, scan, create-category
     account_setup.dart      onboarding, add/edit account, account card
     wallet_view.dart        net worth, Apple Wallet–style card stack, account details
     history_view.dart       search, filters, day-grouped list
     analytics_view.dart     trend / bar / donut / top-categories charts
-    profile_view.dart       stats, budget, goals, settings, CSV import/export
+    plan_view.dart          budgets, savings goals, debts and loans
+    settings_view.dart      profile, grouped preferences, import/export
 ```
 
 ## Ported features
@@ -57,10 +66,30 @@ recurring transactions, budgets, savings goals, analytics, history search/filter
 biometric lock, receipt photos, clipboard "scan", CSV import/export, light/dark theming,
 multi-currency, haptics.
 
-## Not yet ported (iOS-specific, deferred)
-- **Home-screen widget** (`EXPNDWidget`) — would use `home_widget` + native widget code.
-- **Siri / App Intents** SMS scanner — Android has no direct equivalent; would need
-  a share-intent + platform channel.
-- **Deep links** (`xpnd://scan`) — add via `app_links`.
-- **Local notification scheduling** — the daily-reminder toggle persists, but wiring the
-  actual schedule needs `flutter_local_notifications` + platform setup.
+## Platform integrations
+
+The iOS target includes WidgetKit and App Intents code in `ios/ExpndWidget/`
+and `ios/Runner/`. The Home Screen widgets lead with what's left of the monthly
+budget (never net worth) and bundle the app's Noto Sans; their palette in
+`ExpndWidget.swift` mirrors `ExpndColors`. Dart bridges handle widget updates, capture inbox entries,
+and local reminders. Platform integration changes require simulator or device
+verification in addition to the Dart tests.
+
+The coach card and category suggestions use Apple's on-device Foundation Models
+(`ios/Runner/AppleIntelligenceBridge.swift`, `lib/services/apple_intelligence.dart`)
+when Apple Intelligence is available (iOS 26+, iPhone 15 Pro or newer, enabled,
+model downloaded, supported language). Other devices, including iPhone 15 and
+Android, get the same card labelled "Insights" with rule-based copy built from
+the verified facts. The framework is weak-linked, so iOS 17–25 still launch.
+
+## UI conventions
+
+Shared headers and adaptive light/dark surfaces live in `lib/widgets/app_header.dart`
+and `lib/theme/expnd_theme.dart`. Page headers use text titles, aligned 44-point
+actions, and a neutral profile avatar. `ExpndPageBar` gives pushed entry screens
+the same title style. Keep the labeled Add action within the bottom navigation;
+reserve strong yellow fills for primary content and submission actions.
+Use `MoneyField` for currency-aware amount entry.
+Optional transaction controls and settings groups use `DisclosureSection` to keep
+common tasks short while retaining advanced controls. History provides search,
+transaction types, date range, and expandable category/account/tag filters.

@@ -32,8 +32,31 @@ class ExpndWidgetProvider : HomeWidgetProvider() {
     }
 
     private fun bind(context: Context, views: RemoteViews, data: SharedPreferences) {
-        // Headline numbers.
-        views.setTextViewText(R.id.widget_net_worth, data.getString("net_worth", "—"))
+        // Headline: what's left of the monthly budget, or the month's spend
+        // when no budget is set. Net worth is deliberately not shown on the
+        // Home Screen. (The view id predates this and is kept for the layout.)
+        val left = data.getString("left_to_spend", "") ?: ""
+        val over = data.getBoolean("over_budget", false)
+        val month = data.getString("month_label", "") ?: ""
+        views.setTextViewText(
+            R.id.widget_net_label,
+            when {
+                left.isEmpty() -> if (month.isEmpty()) "SPENT" else "$month SPENT"
+                over -> "OVER BUDGET"
+                else -> "LEFT TO SPEND"
+            }
+        )
+        views.setTextViewText(
+            R.id.widget_net_worth,
+            if (left.isEmpty()) data.getString("month_spent", "—") else left
+        )
+        views.setTextColor(
+            R.id.widget_net_worth,
+            ContextCompat.getColor(
+                context,
+                if (over) R.color.widget_expense else R.color.widget_gold
+            )
+        )
         views.setTextViewText(
             R.id.widget_month_label,
             (data.getString("month_label", "") ?: "") + " SPENT"

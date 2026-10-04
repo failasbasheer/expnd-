@@ -154,21 +154,23 @@ List<UpcomingItem> projectUpcoming(
     var guard = 0;
     while (!due!.isAfter(end) && guard++ < 500) {
       if (!due.isBefore(start)) {
-        items.add(UpcomingItem(
-          date: due,
-          title: t.note.trim().isNotEmpty ? t.note.trim() : t.category.raw,
-          amount: t.amount,
-          type: t.type,
-          kind: UpcomingKind.recurring,
-          category: t.category,
-          customCategoryId: t.customCategoryId,
-          accountId: t.accountId,
-          // Just the cadence — "Recurring" is redundant on a screen that only
-          // ever shows things that haven't happened yet, and dropping it leaves
-          // room for the account name instead of truncating it.
-          subtitle: rule.raw,
-          sourceId: t.id,
-        ));
+        items.add(
+          UpcomingItem(
+            date: due,
+            title: t.note.trim().isNotEmpty ? t.note.trim() : t.category.raw,
+            amount: t.amount,
+            type: t.type,
+            kind: UpcomingKind.recurring,
+            category: t.category,
+            customCategoryId: t.customCategoryId,
+            accountId: t.accountId,
+            // Just the cadence — "Recurring" is redundant on a screen that only
+            // ever shows things that haven't happened yet, and dropping it leaves
+            // room for the account name instead of truncating it.
+            subtitle: rule.raw,
+            sourceId: t.id,
+          ),
+        );
       }
       due = rule.nextDate(due);
     }
@@ -185,17 +187,19 @@ List<UpcomingItem> projectUpcoming(
       final date = addMonthsClamped(e.startDate, n);
       if (date.isAfter(end)) break;
       if (date.isBefore(start)) continue;
-      items.add(UpcomingItem(
-        date: date,
-        title: e.name.trim().isNotEmpty ? e.name.trim() : 'EMI',
-        amount: monthly,
-        type: TransactionType.expense,
-        kind: UpcomingKind.emi,
-        category: TransactionCategory.other,
-        accountId: e.accountId,
-        subtitle: 'Installment $n of ${e.tenureMonths}',
-        sourceId: e.id,
-      ));
+      items.add(
+        UpcomingItem(
+          date: date,
+          title: e.name.trim().isNotEmpty ? e.name.trim() : 'EMI',
+          amount: monthly,
+          type: TransactionType.expense,
+          kind: UpcomingKind.emi,
+          category: TransactionCategory.other,
+          accountId: e.accountId,
+          subtitle: 'Installment $n of ${e.tenureMonths}',
+          sourceId: e.id,
+        ),
+      );
     }
   }
 
@@ -218,18 +222,20 @@ List<UpcomingItem> projectUpcoming(
       if (date.isBefore(start)) continue;
       final due = left < plan ? left : plan;
       left -= due;
-      items.add(UpcomingItem(
-        date: date,
-        title: d.theyOweMe ? '${d.person} repays' : 'Repay ${d.person}',
-        amount: due,
-        // They pay me back: money comes in. I pay them back: it goes out.
-        type: d.theyOweMe ? TransactionType.income : TransactionType.expense,
-        kind: UpcomingKind.debt,
-        category: TransactionCategory.other,
-        accountId: d.accountId,
-        subtitle: 'Monthly repayment',
-        sourceId: d.id,
-      ));
+      items.add(
+        UpcomingItem(
+          date: date,
+          title: d.theyOweMe ? '${d.person} repays' : 'Repay ${d.person}',
+          amount: due,
+          // They pay me back: money comes in. I pay them back: it goes out.
+          type: d.theyOweMe ? TransactionType.income : TransactionType.expense,
+          kind: UpcomingKind.debt,
+          category: TransactionCategory.other,
+          accountId: d.accountId,
+          subtitle: 'Monthly repayment',
+          sourceId: d.id,
+        ),
+      );
     }
   }
 
@@ -272,8 +278,9 @@ UpcomingSummary summarizeUpcoming(
   }
 
   final liquid = store.accounts
-      .where((a) =>
-          a.type != AccountType.credit && a.type != AccountType.investment)
+      .where(
+        (a) => a.type != AccountType.credit && a.type != AccountType.investment,
+      )
       .fold(0.0, (s, a) => s + store.balanceFor(a));
 
   return UpcomingSummary(
@@ -288,7 +295,8 @@ UpcomingSummary summarizeUpcoming(
 
 /// Groups [items] into ordered day buckets for the sectioned timeline.
 List<({DateTime day, List<UpcomingItem> items})> groupUpcomingByDay(
-    List<UpcomingItem> items) {
+  List<UpcomingItem> items,
+) {
   final out = <({DateTime day, List<UpcomingItem> items})>[];
   for (final i in items) {
     final day = DateTime(i.date.year, i.date.month, i.date.day);

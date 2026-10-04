@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/insights.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
@@ -10,6 +11,7 @@ import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
+import '../widgets/context_ai_coach.dart';
 import '../widgets/neopop.dart';
 import 'account_setup.dart';
 import 'settings_view.dart';
@@ -111,6 +113,7 @@ class _WalletViewState extends State<WalletView> {
     if (_selected >= accounts.length) {
       _selected = accounts.isEmpty ? 0 : accounts.length - 1;
     }
+    final aiFacts = _walletAiFacts(store, accounts, code);
 
     return Container(
       color: oc.bg,
@@ -136,8 +139,16 @@ class _WalletViewState extends State<WalletView> {
                         child: _netWorthHeader(oc, store, accounts, code),
                       ),
                       const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: FadeSlideIn(
+                          index: 1,
+                          child: ContextAiCoach(facts: aiFacts),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                       FadeSlideIn(
-                        index: 1,
+                        index: 2,
                         child: KeyedSubtree(
                           key: _deckKey,
                           child: _cardStack(store, accounts, code),
@@ -172,6 +183,60 @@ class _WalletViewState extends State<WalletView> {
         ],
       ),
     );
+  }
+
+  List<Insight> _walletAiFacts(
+    AppStore store,
+    List<Account> accounts,
+    String code,
+  ) {
+    if (accounts.isEmpty) return const [];
+    final netWorth = accounts.fold(
+      0.0,
+      (sum, account) => sum + store.netWorthFor(account),
+    );
+    final spendable = accounts
+        .where(
+          (account) =>
+              account.type == AccountType.bank ||
+              account.type == AccountType.cash ||
+              account.type == AccountType.savings,
+        )
+        .fold(0.0, (sum, account) => sum + store.netWorthFor(account));
+    final creditAccounts = accounts
+        .where((account) => account.type == AccountType.credit)
+        .toList();
+    final creditUsed = creditAccounts.fold(
+      0.0,
+      (sum, account) => sum + store.creditUsedFor(account),
+    );
+
+    return [
+      Insight(
+        title: 'Net worth is ${formatCurrency(netWorth, code)}',
+        detail:
+            'Calculated across ${accounts.length} account${accounts.length == 1 ? '' : 's'}',
+        tone: netWorth >= 0 ? InsightTone.good : InsightTone.warn,
+        icon: 'wallet.pass.fill',
+        weight: 100,
+      ),
+      Insight(
+        title: '${formatCurrency(spendable, code)} is spendable now',
+        detail: 'Bank, cash, and savings balances only',
+        tone: spendable >= 0 ? InsightTone.good : InsightTone.warn,
+        icon: 'banknote.fill',
+        weight: 80,
+      ),
+      if (creditAccounts.isNotEmpty)
+        Insight(
+          title: '${formatCurrency(creditUsed, code)} in credit is used',
+          detail:
+              'Across ${creditAccounts.length} credit card${creditAccounts.length == 1 ? '' : 's'}',
+          tone: creditUsed > 0 ? InsightTone.neutral : InsightTone.good,
+          icon: 'creditcard.fill',
+          weight: 60,
+        ),
+    ];
   }
 
   /// Sticky identity bar for the card at the front of the deck. Slides in only
@@ -277,7 +342,7 @@ class _WalletViewState extends State<WalletView> {
                         formatCurrency(amount, code),
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: -0.2,
                           color: amount < 0 ? ExpndColors.red : oc.text,
                         ),
@@ -295,7 +360,7 @@ class _WalletViewState extends State<WalletView> {
   Widget _titleBar(List<Account> accounts) {
     return ExpndHeader(
       icon: 'creditcard.fill',
-      title: 'MY WALLET',
+      title: 'Wallet',
       actions: [
         // Was a labelled "+ ADD" pill — squat, a different height to every
         // other control on screen, and carrying a word the plus already says.
@@ -389,8 +454,8 @@ class _WalletViewState extends State<WalletView> {
             'NO ACCOUNTS YET',
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -424,7 +489,7 @@ class _WalletViewState extends State<WalletView> {
                     'ADD FIRST ACCOUNT',
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: 1.5,
                       color: ExpndColors.ink,
                     ),
@@ -444,59 +509,67 @@ class _WalletViewState extends State<WalletView> {
     List<Account> accounts,
     String code,
   ) {
-    final total = accounts.fold(0.0, (s, acc) => s + store.balanceFor(acc));
+    final total = accounts.fold(0.0, (s, acc) => s + store.netWorthFor(acc));
+    final spendable = accounts
+        .where(
+          (acc) =>
+              acc.type == AccountType.bank ||
+              acc.type == AccountType.cash ||
+              acc.type == AccountType.savings,
+        )
+        .fold(0.0, (s, acc) => s + store.netWorthFor(acc));
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: NeoPopElevated(
-        faceColor: ExpndColors.gold,
-        depthColor: ExpndColors.goldDark,
-        borderColor: ExpndColors.goldDark,
-        depth: 5,
-        cornerRadius: 6,
-        child: Stack(
+      child: Container(
+        decoration: BoxDecoration(
+          color: ExpndColors.gold,
+          borderRadius: BorderRadius.circular(ExpndRadius.card),
+          border: Border.all(
+            color: ExpndColors.goldDark.withValues(alpha: 0.7),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Positioned.fill(
-              child: NeoPopShine(
-                color: ExpndColors.ink.withValues(alpha: 0.08),
+            Text(
+              'Total net worth',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0,
+                color: ExpndColors.ink.withValues(alpha: 0.55),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TOTAL NET WORTH',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: ExpndColors.ink.withValues(alpha: 0.55),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      formatCurrency(total, code),
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        color: ExpndColors.ink,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${accounts.length} account${accounts.length == 1 ? "" : "s"}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: ExpndColors.ink.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                formatCurrency(total, code),
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: ExpndColors.ink,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${accounts.length} account${accounts.length == 1 ? "" : "s"} · not all spendable',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: ExpndColors.ink.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              'Spendable cash ${formatCurrency(spendable, code)}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: ExpndColors.ink.withValues(alpha: 0.72),
               ),
             ),
           ],
@@ -664,7 +737,7 @@ class _WalletViewState extends State<WalletView> {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -694,7 +767,7 @@ class _WalletViewState extends State<WalletView> {
                         formatCurrency(account.balance, code),
                         style: TextStyle(
                           fontSize: 26,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: oc.text,
                         ),
                       ),
@@ -750,7 +823,7 @@ class _WalletViewState extends State<WalletView> {
                               formatCurrency(netChange.abs(), code),
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                                 color: positive
                                     ? ExpndColors.green
                                     : ExpndColors.red,
@@ -786,7 +859,7 @@ class _WalletViewState extends State<WalletView> {
                       '${store.transactionsForAccount(account.id).length} txns',
                       style: TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         color: oc.text,
                       ),
                     ),
@@ -850,7 +923,7 @@ class _WalletViewState extends State<WalletView> {
                 'Remove "${account.name}"?',
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: oc.text,
                 ),
               ),
@@ -899,7 +972,7 @@ class _WalletViewState extends State<WalletView> {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Column(
         children: [
@@ -917,7 +990,7 @@ class _WalletViewState extends State<WalletView> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
+                      letterSpacing: 0.3,
                       color: oc.muted,
                     ),
                   ),
@@ -1017,8 +1090,8 @@ class _ReorderAccountsSheetState extends State<_ReorderAccountsSheet> {
             'ARRANGE ACCOUNTS',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -1067,7 +1140,7 @@ class _ReorderAccountsSheetState extends State<_ReorderAccountsSheet> {
                           'SAVE ORDER',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 1.5,
                             color: ExpndColors.ink,
                           ),

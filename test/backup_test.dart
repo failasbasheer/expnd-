@@ -47,49 +47,67 @@ void main() {
 
   /// A store with one of everything, so "complete" is actually testable.
   ({AppStore store, Account checking, Account savings}) populate(
-      AppStore store) {
+    AppStore store,
+  ) {
     final checking = Account(
-        name: 'Checking',
-        type: AccountType.bank,
-        currencyCode: 'USD',
-        balance: 1000);
+      name: 'Checking',
+      type: AccountType.bank,
+      currencyCode: 'USD',
+      balance: 1000,
+    );
     final savings = Account(
-        name: 'Savings',
-        type: AccountType.savings,
-        currencyCode: 'USD',
-        balance: 5000);
+      name: 'Savings',
+      type: AccountType.savings,
+      currencyCode: 'USD',
+      balance: 5000,
+    );
     store.addAccount(checking);
     store.addAccount(savings);
 
-    store.addTransaction(Transaction(
-      note: 'Blue Bottle',
-      amount: 6.50,
-      category: TransactionCategory.food,
-      type: TransactionType.expense,
-    )..accountId = checking.id);
-    store.addTransaction(Transaction(
-      note: 'Salary',
-      amount: 4200,
-      category: TransactionCategory.salary,
-      type: TransactionType.income,
-    )..accountId = checking.id);
+    store.addTransaction(
+      Transaction(
+        note: 'Blue Bottle',
+        amount: 6.50,
+        category: TransactionCategory.food,
+        type: TransactionType.expense,
+      )..accountId = checking.id,
+    );
+    store.addTransaction(
+      Transaction(
+        note: 'Salary',
+        amount: 4200,
+        category: TransactionCategory.salary,
+        type: TransactionType.income,
+      )..accountId = checking.id,
+    );
 
     store.setBudget(TransactionCategory.food, 400);
-    store.addCustomCategory(CustomCategory(
-        name: 'Coffee', emoji: '☕', typeRaw: 'Expense', colorHex: 'F97316'));
-    store.addGoal(SavingsGoal(
+    store.addCustomCategory(
+      CustomCategory(
+        name: 'Coffee',
+        emoji: '☕',
+        typeRaw: 'Expense',
+        colorHex: 'F97316',
+      ),
+    );
+    store.addGoal(
+      SavingsGoal(
         name: 'Japan Trip',
         targetAmount: 6000,
         allocatedAmount: 2350,
-        accountId: savings.id));
-    store.addEmi(Emi(
-      accountId: checking.id,
-      name: 'MacBook',
-      principal: 12000,
-      annualRate: 13.5,
-      tenureMonths: 12,
-      startDate: DateTime(2026, 1, 14),
-    ));
+        accountId: savings.id,
+      ),
+    );
+    store.addEmi(
+      Emi(
+        accountId: checking.id,
+        name: 'MacBook',
+        principal: 12000,
+        annualRate: 13.5,
+        tenureMonths: 12,
+        startDate: DateTime(2026, 1, 14),
+      ),
+    );
     return (store: store, checking: checking, savings: savings);
   }
 
@@ -125,8 +143,7 @@ void main() {
 
       final target = newStore();
       final targetSettings = await newSettings();
-      final summary =
-          await restoreBackup(json, target, targetSettings, tmp);
+      final summary = await restoreBackup(json, target, targetSettings, tmp);
 
       expect(summary.transactions, 2);
       expect(summary.accounts, 2);
@@ -139,9 +156,11 @@ void main() {
       expect(targetSettings.userName, 'Failas');
 
       // Balances must survive intact — they're the whole point.
-      final restored =
-          target.accounts.firstWhere((a) => a.name == 'Checking');
-      expect(target.balanceFor(restored), fixture.store.balanceFor(fixture.checking));
+      final restored = target.accounts.firstWhere((a) => a.name == 'Checking');
+      expect(
+        target.balanceFor(restored),
+        fixture.store.balanceFor(fixture.checking),
+      );
     });
 
     test('relinks transactions to their accounts', () async {
@@ -153,8 +172,7 @@ void main() {
       final target = newStore();
       await restoreBackup(json, target, await newSettings(), tmp);
 
-      final checking =
-          target.accounts.firstWhere((a) => a.name == 'Checking');
+      final checking = target.accounts.firstWhere((a) => a.name == 'Checking');
       expect(checking.id, fixture.checking.id); // ids are preserved
       expect(target.transactionsForAccount(checking.id).length, 2);
     });
@@ -173,12 +191,17 @@ void main() {
 
       final target = newStore();
       final restoreDir = await Directory.systemTemp.createTemp('expnd-photos');
-      final summary =
-          await restoreBackup(json, target, await newSettings(), restoreDir);
+      final summary = await restoreBackup(
+        json,
+        target,
+        await newSettings(),
+        restoreDir,
+      );
 
       expect(summary.photos, 1);
-      final restoredPath =
-          target.transactions.firstWhere((t) => t.photoPath != null).photoPath!;
+      final restoredPath = target.transactions
+          .firstWhere((t) => t.photoPath != null)
+          .photoPath!;
       expect(File(restoredPath).readAsBytesSync(), [1, 2, 3, 4, 5]);
       await restoreDir.delete(recursive: true);
     });
@@ -204,8 +227,9 @@ void main() {
 
       await expectLater(
         () => restoreBackup(content, store, settings, tmp),
-        throwsA(isA<BackupException>()
-            .having((e) => e.message, 'message', message)),
+        throwsA(
+          isA<BackupException>().having((e) => e.message, 'message', message),
+        ),
       );
       // The store must be exactly as it was — never half-restored.
       expect(store.transactions.length, before);
@@ -219,13 +243,16 @@ void main() {
 
     test('rejects JSON that is not an EXPND backup', () async {
       await expectRejected(
-          jsonEncode({'some': 'other', 'app': 1}), contains('Not an EXPND backup'));
+        jsonEncode({'some': 'other', 'app': 1}),
+        contains('Not an EXPND backup'),
+      );
     });
 
     test('rejects a backup from a newer app version', () async {
       await expectRejected(
-          jsonEncode({'format': backupFormat, 'version': backupVersion + 1}),
-          contains('newer version'));
+        jsonEncode({'format': backupFormat, 'version': backupVersion + 1}),
+        contains('newer version'),
+      );
     });
 
     test('rejects a damaged backup mid-file', () async {
@@ -234,7 +261,7 @@ void main() {
           'format': backupFormat,
           'version': backupVersion,
           'transactions': [
-            {'id': 'x', 'note': 'ok'} // missing required amount/category
+            {'id': 'x', 'note': 'ok'}, // missing required amount/category
           ],
         }),
         contains('damaged'),
@@ -300,46 +327,56 @@ void main() {
       final target = newStore();
       final targetSettings = await newSettings();
       final summary = await restoreBackup(
-          await file!.readAsString(), target, targetSettings, tmp);
+        await file!.readAsString(),
+        target,
+        targetSettings,
+        tmp,
+      );
 
       expect(summary.transactions, store.transactions.length);
       expect(summary.accounts, store.accounts.length);
       expect(target.emis.length, store.emis.length);
     });
 
-    test('snapshots leave the photos on disk rather than copying them',
-        () async {
-      final store = newStore();
-      populate(store);
-      final settings = await newSettings();
+    test(
+      'snapshots leave the photos on disk rather than copying them',
+      () async {
+        final store = newStore();
+        populate(store);
+        final settings = await newSettings();
 
-      final embedded = buildBackup(store, settings);
-      final onDevice = buildBackup(store, settings, embedPhotos: false);
+        final embedded = buildBackup(store, settings);
+        final onDevice = buildBackup(store, settings, embedPhotos: false);
 
-      expect(embedded['photosEmbedded'], isTrue);
-      expect(onDevice['photosEmbedded'], isFalse);
-      expect((onDevice['photos'] as Map), isEmpty);
-      // The exported one still carries them, which is the whole point of it.
-      expect((embedded['photos'] as Map).length,
-          greaterThanOrEqualTo((onDevice['photos'] as Map).length));
-    });
+        expect(embedded['photosEmbedded'], isTrue);
+        expect(onDevice['photosEmbedded'], isFalse);
+        expect((onDevice['photos'] as Map), isEmpty);
+        // The exported one still carries them, which is the whole point of it.
+        expect(
+          (embedded['photos'] as Map).length,
+          greaterThanOrEqualTo((onDevice['photos'] as Map).length),
+        );
+      },
+    );
 
-    test('maybeAutoBackup skips an empty ledger, a fresh one, and when off',
-        () async {
-      final settings = await newSettings();
+    test(
+      'maybeAutoBackup skips an empty ledger, a fresh one, and when off',
+      () async {
+        final settings = await newSettings();
 
-      // Nothing typed yet — a snapshot of an empty ledger protects nothing.
-      expect(await maybeAutoBackup(newStore(), settings, tmp), isNull);
+        // Nothing typed yet — a snapshot of an empty ledger protects nothing.
+        expect(await maybeAutoBackup(newStore(), settings, tmp), isNull);
 
-      final store = newStore();
-      populate(store);
-      expect(await maybeAutoBackup(store, settings, tmp), isNotNull);
-      // Just taken, so the next launch must not take another.
-      expect(await maybeAutoBackup(store, settings, tmp), isNull);
+        final store = newStore();
+        populate(store);
+        expect(await maybeAutoBackup(store, settings, tmp), isNotNull);
+        // Just taken, so the next launch must not take another.
+        expect(await maybeAutoBackup(store, settings, tmp), isNull);
 
-      settings.autoBackupEnabled = false;
-      settings.lastAutoBackupMs = 0;
-      expect(await maybeAutoBackup(store, settings, tmp), isNull);
-    });
+        settings.autoBackupEnabled = false;
+        settings.lastAutoBackupMs = 0;
+        expect(await maybeAutoBackup(store, settings, tmp), isNull);
+      },
+    );
   });
 }

@@ -62,25 +62,32 @@ List<DueAlert> dueSoonAlerts(
   int horizonDays = kUpcomingHorizonDays,
 }) {
   final now = from ?? DateTime.now();
-  final items = projectUpcoming(store, from: now, horizonDays: horizonDays)
-      .where((i) => !i.isInflow)
-      .toList();
+  final items = projectUpcoming(
+    store,
+    from: now,
+    horizonDays: horizonDays,
+  ).where((i) => !i.isInflow).toList();
 
   final when = leadDays == 1 ? 'tomorrow' : 'in $leadDays days';
   final out = <DueAlert>[];
   for (final i in items) {
-    final day = DateTime(i.date.year, i.date.month, i.date.day)
-        .subtract(Duration(days: leadDays));
+    final day = DateTime(
+      i.date.year,
+      i.date.month,
+      i.date.day,
+    ).subtract(Duration(days: leadDays));
     final fireAt = DateTime(day.year, day.month, day.day, hour, minute);
     if (!fireAt.isAfter(now)) continue; // the warning window has already closed
 
     final acct = store.accountFor(i.accountId)?.name;
     final money = formatCurrency(i.amount, code);
-    out.add(DueAlert(
-      fireAt: fireAt,
-      title: '${i.title} due $when',
-      body: acct == null || acct.isEmpty ? money : '$money — $acct',
-    ));
+    out.add(
+      DueAlert(
+        fireAt: fireAt,
+        title: '${i.title} due $when',
+        body: acct == null || acct.isEmpty ? money : '$money — $acct',
+      ),
+    );
     if (out.length >= cap) break;
   }
   return out;
@@ -113,10 +120,12 @@ StateAlert? overBudgetAlert(
   required int lastAlertedMonth,
   DateTime? from,
 }) {
-  if (!newlyOverBudget(store,
-      monthlyBudget: monthlyBudget,
-      lastAlertedMonth: lastAlertedMonth,
-      from: from)) {
+  if (!newlyOverBudget(
+    store,
+    monthlyBudget: monthlyBudget,
+    lastAlertedMonth: lastAlertedMonth,
+    from: from,
+  )) {
     return null;
   }
   final now = from ?? DateTime.now();
@@ -136,16 +145,18 @@ StateAlert? overBudgetAlert(
 List<SavingsGoal> newlyReachedGoals(AppStore store, List<String> celebrated) {
   final done = celebrated.toSet();
   return store.goals
-      .where((g) =>
-          g.targetAmount > 0 &&
-          store.progressForGoal(g) >= 1.0 &&
-          !done.contains(g.id))
+      .where(
+        (g) =>
+            g.targetAmount > 0 &&
+            store.progressForGoal(g) >= 1.0 &&
+            !done.contains(g.id),
+      )
       .toList();
 }
 
 /// The congratulations notification for a funded [goal].
 StateAlert goalReachedAlert(SavingsGoal goal, String code) => StateAlert(
-      'Goal reached 🎉',
-      '"${goal.name}" is fully funded at '
-          '${formatCurrency(goal.targetAmount, code)}. Nice work.',
-    );
+  'Goal reached 🎉',
+  '"${goal.name}" is fully funded at '
+      '${formatCurrency(goal.targetAmount, code)}. Nice work.',
+);

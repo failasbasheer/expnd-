@@ -3,17 +3,22 @@ import 'package:intl/intl.dart';
 
 /// Caps a decimal money input so oversized values can't overflow the gauges
 /// and amount labels they feed (net worth, budget ring, account cards, EMI).
-/// Allows up to 7 integer digits and 2 decimal places — i.e. max 9,999,999.99.
+/// Allows up to 7 integer digits; decimal precision follows the field currency.
 class AmountInputFormatter extends TextInputFormatter {
-  static final RegExp _pattern = RegExp(r'^\d{0,7}(\.\d{0,2})?$');
+  final int decimalDigits;
 
-  const AmountInputFormatter();
+  const AmountInputFormatter({this.decimalDigits = 2});
 
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     final text = newValue.text;
-    if (text.isEmpty || _pattern.hasMatch(text)) return newValue;
+    final pattern = decimalDigits == 0
+        ? RegExp(r'^\d{0,7}$')
+        : RegExp('^\\d{0,7}(\\.\\d{0,$decimalDigits})?\$');
+    if (text.isEmpty || pattern.hasMatch(text)) return newValue;
     // Reject the edit by keeping the previous valid value.
     return oldValue;
   }

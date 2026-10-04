@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -16,7 +17,7 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/app_header.dart';
-import '../widgets/neopop.dart';
+import '../widgets/disclosure_section.dart';
 import '../widgets/section_card.dart';
 import '../widgets/tag_manager.dart';
 import 'account_setup.dart';
@@ -64,7 +65,7 @@ class _SettingsViewState extends State<SettingsView> {
           children: [
             ExpndHeader(
               icon: 'person.fill',
-              title: 'PROFILE',
+              title: 'SETTINGS',
               actions: [
                 HeaderAction(
                   icon: 'xmark',
@@ -78,21 +79,66 @@ class _SettingsViewState extends State<SettingsView> {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(
-                    16, 16, 16, ExpndSpacing.scrollBottom),
+                  16,
+                  16,
+                  16,
+                  ExpndSpacing.scrollBottom,
+                ),
                 children: [
                   _avatarCard(oc, settings),
                   const SizedBox(height: 20),
-                  _manageCategoriesSection(oc, store),
-                  if (store.allTags.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _manageTagsSection(oc, store, code),
+                  DisclosureSection(
+                    title: 'General',
+                    subtitle: 'Currency, default entry type and app lock',
+                    child: _generalSection(oc, store, settings),
+                  ),
+                  const SizedBox(height: 12),
+                  DisclosureSection(
+                    title: 'Reminders & alerts',
+                    subtitle:
+                        'Daily reminders, bills, budgets and weekly summaries',
+                    child: _notificationsSection(oc, settings),
+                  ),
+                  const SizedBox(height: 12),
+                  DisclosureSection(
+                    title: 'Categories & tags',
+                    subtitle: 'Organize transactions your way',
+                    child: Column(
+                      children: [
+                        _manageCategoriesSection(oc, store),
+                        if (store.allTags.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          _manageTagsSection(oc, store, code),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (Platform.isIOS) ...[
+                    const SizedBox(height: 12),
+                    DisclosureSection(
+                      title: 'Quick capture',
+                      subtitle: 'Widget buttons and Back Tap setup',
+                      child: Column(
+                        children: [
+                          _quickLogSection(oc, settings, symbol),
+                          const SizedBox(height: 20),
+                          _backTapSection(oc),
+                        ],
+                      ),
+                    ),
                   ],
-                  const SizedBox(height: 20),
-                  _generalSection(oc, store, settings),
-                  const SizedBox(height: 20),
-                  _appearanceSection(oc, settings),
-                  const SizedBox(height: 20),
-                  _dataSection(oc, store, symbol),
+                  const SizedBox(height: 12),
+                  DisclosureSection(
+                    title: 'Appearance',
+                    subtitle: 'Follow your device, or choose light or dark',
+                    child: _appearanceSection(oc, settings),
+                  ),
+                  const SizedBox(height: 12),
+                  DisclosureSection(
+                    title: 'Data',
+                    subtitle: 'Backups, restore, import and export',
+                    child: _dataSection(oc, store, symbol),
+                  ),
                 ],
               ),
             ),
@@ -102,134 +148,112 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
+  void _saveName(SettingsStore settings) {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return;
+    settings.userName = name;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _editingName = false);
+  }
+
   Widget _avatarCard(ExpndColors oc, SettingsStore settings) {
-    final initial =
-        settings.userName.isNotEmpty ? settings.userName[0].toUpperCase() : '?';
-    return NeoPopElevated(
-      faceColor: ExpndColors.gold,
-      depthColor: ExpndColors.goldDark,
-      borderColor: ExpndColors.ink,
-      depth: 7,
-      cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Flat outlined monogram tile — hard ink border, no heavy block.
-            Container(
-              width: 58,
-              height: 58,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: ExpndColors.ink.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: ExpndColors.ink, width: 2),
-              ),
-              child: Text(initial,
+    final name = settings.userName.trim();
+    final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: oc.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: oc.card,
+                child: Text(
+                  initial,
                   style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: ExpndColors.ink)),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('WELCOME BACK',
-                      style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                          color: ExpndColors.ink.withValues(alpha: 0.5))),
-                  const SizedBox(height: 6),
-                  if (_editingName)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextField(
-                          controller: _nameCtrl,
-                          autofocus: true,
-                          style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              color: ExpndColors.ink),
-                          decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              hintText: 'Your name'),
-                        ),
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                if (_nameCtrl.text.trim().isNotEmpty) {
-                                  settings.userName = _nameCtrl.text.trim();
-                                }
-                                // Release focus before removing the field,
-                                // or iOS leaves the keyboard stuck open.
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                setState(() => _editingName = false);
-                              },
-                              child: Text('Save',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: ExpndColors.ink)),
-                            ),
-                            const SizedBox(width: 12),
-                            GestureDetector(
-                              onTap: () {
-                                _nameCtrl.text = settings.userName;
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                setState(() => _editingName = false);
-                              },
-                              child: Text('Cancel',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: ExpndColors.ink.withValues(alpha: 0.6))),
-                            ),
-                          ],
-                        ),
-                      ],
-                    )
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(settings.userName,
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                                color: ExpndColors.ink)),
-                        GestureDetector(
-                          onTap: () {
-                            _nameCtrl.text = settings.userName;
-                            setState(() => _editingName = true);
-                          },
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(sfIcon('pencil'),
-                                  size: 10, color: ExpndColors.ink.withValues(alpha: 0.6)),
-                              const SizedBox(width: 4),
-                              Text('Edit name',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: ExpndColors.ink.withValues(alpha: 0.6))),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: oc.text,
+                  ),
+                ),
               ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Your profile' : name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: oc.text,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Your personal ledger',
+                      style: TextStyle(fontSize: 12, color: oc.muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (!_editingName)
+                IconButton(
+                  tooltip: 'Edit name',
+                  onPressed: () {
+                    _nameCtrl.text = settings.userName;
+                    setState(() => _editingName = true);
+                  },
+                  icon: Icon(Icons.edit_outlined, size: 20, color: oc.muted),
+                ),
+            ],
+          ),
+          if (_editingName) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameCtrl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _saveName(settings),
+              onChanged: (_) => setState(() {}),
+              style: TextStyle(fontSize: 16, color: oc.text),
+              decoration: const InputDecoration(
+                labelText: 'Your name',
+                contentPadding: EdgeInsets.all(14),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton(
+                  onPressed: _nameCtrl.text.trim().isEmpty
+                      ? null
+                      : () => _saveName(settings),
+                  child: const Text('Save name'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _nameCtrl.text = settings.userName;
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    setState(() => _editingName = false);
+                  },
+                  child: const Text('Cancel'),
+                ),
+              ],
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -252,8 +276,9 @@ class _SettingsViewState extends State<SettingsView> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                        'Create your own categories to log spending your way.',
-                        style: TextStyle(fontSize: 12, color: oc.muted)),
+                      'Create your own categories to log spending your way.',
+                      style: TextStyle(fontSize: 12, color: oc.muted),
+                    ),
                   ),
                 ],
               ),
@@ -274,13 +299,16 @@ class _SettingsViewState extends State<SettingsView> {
                   Icon(sfIcon('plus.circle.fill'), size: 20, color: oc.accent),
                   const SizedBox(width: 12),
                   Flexible(
-                    child: Text('New category',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: oc.accent)),
+                    child: Text(
+                      'New category',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: oc.accent,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -290,7 +318,6 @@ class _SettingsViewState extends State<SettingsView> {
       ),
     );
   }
-
 
   Widget _categoryManageRow(ExpndColors oc, CustomCategory c) {
     final color = hexColor(c.colorHex);
@@ -302,8 +329,8 @@ class _SettingsViewState extends State<SettingsView> {
         child: Row(
           children: [
             Container(
-              width: 32,
-              height: 32,
+              width: 36,
+              height: 36,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.15),
@@ -318,19 +345,25 @@ class _SettingsViewState extends State<SettingsView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(c.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: oc.text)),
-                  Text((c.applicableType?.raw ?? 'Both').toUpperCase(),
-                      style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                          color: oc.muted)),
+                  Text(
+                    c.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: oc.text,
+                    ),
+                  ),
+                  Text(
+                    (c.applicableType?.raw ?? 'Both').toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                      color: oc.muted,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -347,7 +380,7 @@ class _SettingsViewState extends State<SettingsView> {
     final tags = store.allTags;
     return sectionCard(
       oc,
-      'TAGS',
+      'Tags',
       Column(
         children: [
           for (int i = 0; i < tags.length; i++) ...[
@@ -359,9 +392,12 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-
   Widget _tagManageRow(
-      ExpndColors oc, AppStore store, String tag, String code) {
+    ExpndColors oc,
+    AppStore store,
+    String tag,
+    String code,
+  ) {
     final count = store.transactionsWithTag(tag).length;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -377,13 +413,18 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: BoxDecoration(
                 color: ExpndColors.gold.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ExpndColors.gold.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: ExpndColors.gold.withValues(alpha: 0.3),
+                ),
               ),
-              child: Text('#',
-                  style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: oc.accent)),
+              child: Text(
+                '#',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: oc.accent,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -391,19 +432,23 @@ class _SettingsViewState extends State<SettingsView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(tag,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: oc.text)),
                   Text(
-                      '$count transaction${count == 1 ? '' : 's'} · '
-                      '${formatCurrency(store.spentOnTag(tag), code)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 10, color: oc.muted)),
+                    tag,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: oc.text,
+                    ),
+                  ),
+                  Text(
+                    '$count transaction${count == 1 ? '' : 's'} · '
+                    '${formatCurrency(store.spentOnTag(tag), code)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: oc.muted),
+                  ),
                 ],
               ),
             ),
@@ -414,212 +459,558 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-
-  Widget _generalSection(
-      ExpndColors oc, AppStore store, SettingsStore settings) {
-    // Amounts are stored without FX conversion, so the app-wide currency is
-    // fixed once any transaction references it — changing it would relabel
-    // existing amounts rather than convert them. Lock it after the first tx.
-    final currencyLocked = store.transactions.isNotEmpty;
+  /// The amounts the Quick Log widget offers as one-tap buttons. A tap logs
+  /// straight away with no confirmation, so these have to be amounts the user
+  /// actually spends — which only they know.
+  Widget _quickLogSection(
+    ExpndColors oc,
+    SettingsStore settings,
+    String symbol,
+  ) {
+    final presets = settings.quickCapturePresets;
     return sectionCard(
       oc,
-      'GENERAL',
+      'QUICK LOG',
       Column(
         children: [
-          // Currency
-          GestureDetector(
-            onTap: () async {
-              if (currencyLocked) {
-                _snack(
-                    'Currency is locked — amounts aren\'t converted, so it can\'t change once you have transactions.');
-                return;
-              }
-              final picked =
-                  await showCurrencyPicker(context, settings.currencyCode);
-              if (picked != null) settings.currencyCode = picked;
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Icon(sfIcon('dollarsign.circle.fill'),
-                      size: 20,
-                      color: currencyLocked ? oc.dimmed : oc.accent),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Currency',
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: oc.text)),
-                        Text(
-                            currencyLocked
-                                ? 'Locked — you have transactions'
-                                : supportedCurrencies
-                                        .where(
-                                            (c) => c.code == settings.currencyCode)
-                                        .map((c) => c.name)
-                                        .firstOrNull ??
-                                    'US Dollar',
-                            style: TextStyle(fontSize: 11, color: oc.muted)),
-                      ],
-                    ),
-                  ),
-                  Text(settings.currencyCode,
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: currencyLocked ? oc.muted : oc.accent)),
-                  const SizedBox(width: 6),
-                  Icon(sfIcon(currencyLocked ? 'lock.fill' : 'chevron.right'),
-                      size: 12, color: oc.dimmed),
-                ],
-              ),
-            ),
-          ),
-          sectionDivider(oc),
-          // Default type
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(sfIcon('arrow.left.arrow.right'),
-                    size: 20, color: oc.accent),
+                Icon(sfIcon('bolt.fill'), size: 20, color: oc.accent),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Default Type',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Widget Amounts',
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: oc.text)),
-                ),
-                const SizedBox(width: 8),
-                // Scales down rather than overflowing when the label beside it
-                // is long and the system text size is turned up.
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: _segmented(oc, [
-                      ('expense', 'EXPENSE'),
-                      ('income', 'INCOME'),
-                    ], settings.defaultTransactionType, (v) {
-                      Haptics.light();
-                      settings.defaultTransactionType = v;
-                    }),
+                          color: oc.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Tap to change. Logged amounts wait in your inbox '
+                        'until you categorise them.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: oc.muted,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          sectionDivider(oc),
-          // Haptics
-          _toggleRow(oc, 'hand.raised.fill', 'Haptics',
-              'Tactile feedback on actions', settings.hapticsEnabled, (v) {
-            settings.hapticsEnabled = v;
-            if (v) Haptics.medium();
-          }),
-          sectionDivider(oc),
-          // Biometric app lock — Face ID on iPhone, fingerprint on Android.
-          _toggleRow(oc, 'faceid', 'Biometric Lock',
-              'Require Face ID / fingerprint to open', settings.biometricLockEnabled,
-              (v) {
-            Haptics.light();
-            settings.biometricLockEnabled = v;
-          }),
-          // Grace window before a re-open asks for Face ID again — so briefly
-          // hopping to another app doesn't demand a fresh scan every time.
-          if (settings.biometricLockEnabled)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _pickAutoLockDelay(settings),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(48, 0, 16, 14),
-                child: Row(
-                  children: [
-                    Text('Ask again',
-                        style: TextStyle(fontSize: 12, color: oc.muted)),
-                    const Spacer(),
-                    Text(_autoLockLabel(settings.autoLockGraceSeconds),
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: oc.accent)),
-                    const SizedBox(width: 6),
-                    Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
-                  ],
-                ),
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+            child: Row(
+              children: [
+                for (var i = 0; i < presets.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _editPreset(settings, presets, i, symbol),
+                      child: Container(
+                        height: 42,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: oc.card,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: oc.border, width: 1.5),
+                        ),
+                        child: Text(
+                          '$symbol${_trimAmount(presets[i])}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: oc.text,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          sectionDivider(oc),
-          // Notifications — all scheduled on-device, no server involved.
-          _toggleRow(
-              oc,
-              'bell.fill',
-              'Daily Reminder',
-              settings.dailyReminder
-                  ? 'Every day at ${_timeLabel(settings.reminderTime)}'
-                  : 'A nightly nudge to log your spending',
-              settings.dailyReminder,
-              (v) => _setReminder(settings, v)),
-          if (settings.dailyReminder) ...[
-            _subRow(oc, 'Reminder time', _timeLabel(settings.reminderTime),
-                () => _pickReminderTime(settings)),
-            _subRow(oc, 'Active days', _daysLabel(settings.reminderDays),
-                () => _pickReminderDays(settings)),
-            _subRow(oc, 'Message', _messageModeLabel(settings.reminderMessageMode),
-                () => _pickMessage(settings)),
-            _subRow(oc, 'Tone', _toneLabel(settings.reminderTone),
-                () => _pickTone(settings)),
-          ],
-          sectionDivider(oc),
-          // Event alerts — each opts in separately; all share the OS permission.
-          _toggleRow(
-              oc,
-              'calendar.badge.clock',
-              'Bills due soon',
-              'A heads-up the night before a bill or EMI',
-              settings.alertBillsDue,
-              (v) => _setAlert(settings, () => settings.alertBillsDue = v, v)),
-          _toggleRow(
-              oc,
-              'exclamationmark.triangle.fill',
-              'Over budget',
-              'When the month crosses your budget',
-              settings.alertOverBudget,
-              (v) => _setAlert(settings, () => settings.alertOverBudget = v, v)),
-          _toggleRow(
-              oc,
-              'flag.fill',
-              'Goal reached',
-              'When a savings goal is fully funded',
-              settings.alertGoalReached,
-              (v) => _setAlert(settings, () => settings.alertGoalReached = v, v)),
-          sectionDivider(oc),
-          // The optional weekly roundup.
-          _toggleRow(
-              oc,
-              'chart.bar.fill',
-              'Weekly summary',
-              settings.weeklySummary
-                  ? 'Every ${_weekdayName(settings.weeklySummaryDay)}'
-                  : 'A once-a-week look at where it went',
-              settings.weeklySummary,
-              (v) => _setAlert(settings, () => settings.weeklySummary = v, v)),
-          if (settings.weeklySummary)
-            _subRow(oc, 'Day', _weekdayName(settings.weeklySummaryDay),
-                () => _pickWeeklyDay(settings)),
+          ),
         ],
       ),
     );
   }
 
+  /// How to put Quick Add on a double-tap of the back of the phone.
+  ///
+  /// This is instructions rather than a switch because it has to be: iOS gives
+  /// apps no API to read Back Tap, or to assign itself to it. All the app can do
+  /// is publish the "Quick Add" shortcut (see ios/Runner/ExpndAppIntents.swift)
+  /// and tell the user where to point the gesture. The app also can't deep-link
+  /// into that Settings pane — the URL for it is private API, and EXPND ships no
+  /// URL launcher at all — so the path is spelled out to be followed by hand.
+  Widget _backTapSection(ExpndColors oc) {
+    Widget step(String n, String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 18,
+            child: Text(
+              n,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: oc.accent,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 12, height: 1.4, color: oc.text),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return sectionCard(
+      oc,
+      'BACK TAP',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(sfIcon('hand.raised.fill'), size: 20, color: oc.accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Double-tap to log',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: oc.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Tap the back of your iPhone twice to open Quick Add. '
+                        'Set it up once in iOS Settings:',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: oc.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          step('1.', 'Settings › Accessibility › Touch › Back Tap'),
+          step('2.', 'Choose Double Tap (or Triple Tap)'),
+          step('3.', 'Scroll to Shortcuts and pick “Quick Add”'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+            child: Text(
+              'Not listed? Open Shortcuts, make a new shortcut with EXPND’s '
+              '“Quick Add” action, save it, then it appears in step 3. '
+              'Back Tap needs iPhone 8 or later.',
+              style: TextStyle(fontSize: 11, height: 1.35, color: oc.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Presets are round numbers by nature, so drop a trailing `.00` rather than
+  /// making every button read `100.00`.
+  static String _trimAmount(double v) {
+    final whole = v.roundToDouble();
+    return (v - whole).abs() < 0.005
+        ? whole.toInt().toString()
+        : v.toStringAsFixed(2);
+  }
+
+  Future<void> _editPreset(
+    SettingsStore settings,
+    List<double> presets,
+    int index,
+    String symbol,
+  ) async {
+    final oc = context.oc;
+    final ctrl = TextEditingController(text: _trimAmount(presets[index]));
+    final value = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: oc.surface,
+        title: Text(
+          'QUICK AMOUNT',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+            color: oc.text,
+          ),
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [AmountInputFormatter()],
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: oc.text,
+          ),
+          decoration: InputDecoration(
+            prefixText: '$symbol ',
+            prefixStyle: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: oc.muted,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('CANCEL', style: TextStyle(color: oc.muted)),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(double.tryParse(ctrl.text.trim())),
+            child: Text('SET', style: TextStyle(color: oc.accent)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (value == null || value <= 0) return;
+    final next = List<double>.from(presets);
+    next[index] = value;
+    settings.quickCapturePresets = next;
+  }
+
+  Widget _generalSection(
+    ExpndColors oc,
+    AppStore store,
+    SettingsStore settings,
+  ) {
+    // Amounts are stored without FX conversion, so the app-wide currency is
+    // fixed once any transaction references it — changing it would relabel
+    // existing amounts rather than convert them. Lock it after the first tx.
+    final currencyLocked =
+        store.transactions.isNotEmpty || store.accounts.isNotEmpty;
+    return Column(
+      children: [
+        // Currency
+        GestureDetector(
+          onTap: () async {
+            if (currencyLocked) {
+              _snack(
+                'Currency is locked — amounts aren\'t converted, so it can\'t change once you have transactions.',
+              );
+              return;
+            }
+            final picked = await showCurrencyPicker(
+              context,
+              settings.currencyCode,
+            );
+            if (picked != null) settings.currencyCode = picked;
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(
+                  sfIcon('dollarsign.circle.fill'),
+                  size: 20,
+                  color: currencyLocked ? oc.dimmed : oc.accent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Currency',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: oc.text,
+                        ),
+                      ),
+                      Text(
+                        currencyLocked
+                            ? 'Locked — you have transactions'
+                            : supportedCurrencies
+                                      .where(
+                                        (c) => c.code == settings.currencyCode,
+                                      )
+                                      .map((c) => c.name)
+                                      .firstOrNull ??
+                                  'US Dollar',
+                        style: TextStyle(fontSize: 11, color: oc.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  settings.currencyCode,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: currencyLocked ? oc.muted : oc.accent,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  sfIcon(currencyLocked ? 'lock.fill' : 'chevron.right'),
+                  size: 12,
+                  color: oc.dimmed,
+                ),
+              ],
+            ),
+          ),
+        ),
+        sectionDivider(oc),
+        // Default type
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                sfIcon('arrow.left.arrow.right'),
+                size: 20,
+                color: oc.accent,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Default Type',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: oc.text,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Scales down rather than overflowing when the label beside it
+              // is long and the system text size is turned up.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: _segmented(
+                    oc,
+                    [('expense', 'EXPENSE'), ('income', 'INCOME')],
+                    settings.defaultTransactionType,
+                    (v) {
+                      Haptics.light();
+                      settings.defaultTransactionType = v;
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        sectionDivider(oc),
+        // Haptics
+        _toggleRow(
+          oc,
+          'hand.raised.fill',
+          'Haptics',
+          'Tactile feedback on actions',
+          settings.hapticsEnabled,
+          (v) {
+            settings.hapticsEnabled = v;
+            if (v) Haptics.medium();
+          },
+        ),
+        sectionDivider(oc),
+        // Biometric app lock. Name the platform's own method — "Face ID" is
+        // Apple's trademark and reads as broken on an Android phone, the same
+        // way LockScreen picks its label from what the device actually has.
+        _toggleRow(
+          oc,
+          'faceid',
+          'Biometric Lock',
+          Platform.isIOS
+              ? 'Require Face ID / Touch ID to open'
+              : 'Require fingerprint to open',
+          settings.biometricLockEnabled,
+          (v) async {
+            Haptics.light();
+            if (!v) {
+              settings.biometricLockEnabled = false;
+              return;
+            }
+            try {
+              final auth = LocalAuthentication();
+              final available = await auth.getAvailableBiometrics();
+              final supported =
+                  await auth.canCheckBiometrics ||
+                  await auth.isDeviceSupported();
+              if (!mounted) return;
+              if (!supported || available.isEmpty) {
+                _snack('Set up Face ID / Touch ID before enabling the lock.');
+                return;
+              }
+              final ok = await auth.authenticate(
+                localizedReason: 'Enable the EXPND app lock',
+                biometricOnly: true,
+              );
+              if (mounted && ok) settings.biometricLockEnabled = true;
+            } catch (_) {
+              if (mounted) _snack('Biometric setup was not completed.');
+            }
+          },
+        ),
+        // Grace window before a re-open asks for Face ID again — so briefly
+        // hopping to another app doesn't demand a fresh scan every time.
+        if (settings.biometricLockEnabled)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _pickAutoLockDelay(settings),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(48, 0, 16, 14),
+              child: Row(
+                children: [
+                  Text(
+                    'Ask again',
+                    style: TextStyle(fontSize: 12, color: oc.muted),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _autoLockLabel(settings.autoLockGraceSeconds),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: oc.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _notificationsSection(ExpndColors oc, SettingsStore settings) {
+    return Column(
+      children: [
+        // Notifications — all scheduled on-device, no server involved.
+        _toggleRow(
+          oc,
+          'bell.fill',
+          'Daily Reminder',
+          settings.dailyReminder
+              ? 'Every day at ${_timeLabel(settings.reminderTime)}'
+              : 'A nightly nudge to log your spending',
+          settings.dailyReminder,
+          (v) => _setReminder(settings, v),
+        ),
+        if (settings.dailyReminder) ...[
+          _subRow(
+            oc,
+            'Reminder time',
+            _timeLabel(settings.reminderTime),
+            () => _pickReminderTime(settings),
+          ),
+          _subRow(
+            oc,
+            'Active days',
+            _daysLabel(settings.reminderDays),
+            () => _pickReminderDays(settings),
+          ),
+          _subRow(
+            oc,
+            'Message',
+            _messageModeLabel(settings.reminderMessageMode),
+            () => _pickMessage(settings),
+          ),
+          _subRow(
+            oc,
+            'Tone',
+            _toneLabel(settings.reminderTone),
+            () => _pickTone(settings),
+          ),
+        ],
+        sectionDivider(oc),
+        // Event alerts — each opts in separately; all share the OS permission.
+        _toggleRow(
+          oc,
+          'calendar.badge.clock',
+          'Bills due soon',
+          'A heads-up the night before a bill or EMI',
+          settings.alertBillsDue,
+          (v) => _setAlert(settings, () => settings.alertBillsDue = v, v),
+        ),
+        _toggleRow(
+          oc,
+          'exclamationmark.triangle.fill',
+          'Over budget',
+          'When the month crosses your budget',
+          settings.alertOverBudget,
+          (v) => _setAlert(settings, () => settings.alertOverBudget = v, v),
+        ),
+        _toggleRow(
+          oc,
+          'flag.fill',
+          'Goal reached',
+          'When a savings goal is fully funded',
+          settings.alertGoalReached,
+          (v) => _setAlert(settings, () => settings.alertGoalReached = v, v),
+        ),
+        sectionDivider(oc),
+        // The optional weekly roundup.
+        _toggleRow(
+          oc,
+          'chart.bar.fill',
+          'Weekly summary',
+          settings.weeklySummary
+              ? 'Every ${_weekdayName(settings.weeklySummaryDay)}'
+              : 'A once-a-week look at where it went',
+          settings.weeklySummary,
+          (v) => _setAlert(settings, () => settings.weeklySummary = v, v),
+        ),
+        if (settings.weeklySummary)
+          _subRow(
+            oc,
+            'Day',
+            _weekdayName(settings.weeklySummaryDay),
+            () => _pickWeeklyDay(settings),
+          ),
+      ],
+    );
+  }
 
   String _timeLabel(TimeOfDay t) {
     final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
@@ -641,8 +1032,10 @@ class _SettingsViewState extends State<SettingsView> {
     final granted = await Reminders.requestPermission();
     if (!granted) {
       if (mounted) {
-        _snack('Notifications are off for EXPND. Turn them on in Settings to '
-            'get the reminder.');
+        _snack(
+          'Notifications are off for EXPND. Turn them on in Settings to '
+          'get the reminder.',
+        );
       }
       return;
     }
@@ -650,10 +1043,11 @@ class _SettingsViewState extends State<SettingsView> {
     await _refresh(settings);
   }
 
-
   Future<void> _pickReminderTime(SettingsStore settings) async {
     final picked = await showTimePicker(
-        context: context, initialTime: settings.reminderTime);
+      context: context,
+      initialTime: settings.reminderTime,
+    );
     if (picked == null) return;
     settings.reminderMinuteOfDay = picked.hour * 60 + picked.minute;
     await _refresh(settings);
@@ -671,7 +1065,11 @@ class _SettingsViewState extends State<SettingsView> {
   /// The indented "label ……… value ›" row under a toggle. One helper so the
   /// reminder's time, days, message and tone rows all line up identically.
   Widget _subRow(
-      ExpndColors oc, String label, String value, VoidCallback onTap) {
+    ExpndColors oc,
+    String label,
+    String value,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -682,14 +1080,17 @@ class _SettingsViewState extends State<SettingsView> {
             Text(label, style: TextStyle(fontSize: 12, color: oc.muted)),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: oc.accent)),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: oc.accent,
+                ),
+              ),
             ),
             const SizedBox(width: 6),
             Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
@@ -703,7 +1104,10 @@ class _SettingsViewState extends State<SettingsView> {
   /// — permission refused means the toggle stays off rather than claiming an
   /// alert that will never fire. [apply] flips the specific setting.
   Future<void> _setAlert(
-      SettingsStore settings, VoidCallback apply, bool on) async {
+    SettingsStore settings,
+    VoidCallback apply,
+    bool on,
+  ) async {
     Haptics.light();
     if (!on) {
       apply();
@@ -713,8 +1117,10 @@ class _SettingsViewState extends State<SettingsView> {
     final granted = await Reminders.requestPermission();
     if (!granted) {
       if (mounted) {
-        _snack('Notifications are off for EXPND. Turn them on in Settings to '
-            'get alerts.');
+        _snack(
+          'Notifications are off for EXPND. Turn them on in Settings to '
+          'get alerts.',
+        );
       }
       return;
     }
@@ -723,10 +1129,22 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   static const List<String> _weekdayNames = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
   static const List<String> _weekdayShort = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
   ];
 
   String _weekdayName(int weekday) => _weekdayNames[(weekday - 1).clamp(0, 6)];
@@ -785,12 +1203,15 @@ class _SettingsViewState extends State<SettingsView> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                child: Text(title,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                        color: oc.text)),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: oc.text,
+                  ),
+                ),
               ),
               Container(height: 1, color: oc.border),
               for (final (value, label, subtitle) in options)
@@ -799,22 +1220,31 @@ class _SettingsViewState extends State<SettingsView> {
                   onTap: () => Navigator.of(sheet).pop(value),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(label,
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: oc.text)),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: oc.text,
+                                ),
+                              ),
                               if (subtitle != null)
-                                Text(subtitle,
-                                    style: TextStyle(
-                                        fontSize: 12, color: oc.muted)),
+                                Text(
+                                  subtitle,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: oc.muted,
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -884,12 +1314,15 @@ class _SettingsViewState extends State<SettingsView> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                    child: Text('ACTIVE DAYS',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            color: oc.text)),
+                    child: Text(
+                      'ACTIVE DAYS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                        color: oc.text,
+                      ),
+                    ),
                   ),
                   Container(height: 1, color: oc.border),
                   for (var d = 1; d <= 7; d++)
@@ -907,18 +1340,26 @@ class _SettingsViewState extends State<SettingsView> {
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 14),
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
                         child: Row(
                           children: [
-                            Text(_weekdayNames[d - 1],
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: oc.text)),
+                            Text(
+                              _weekdayNames[d - 1],
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: oc.text,
+                              ),
+                            ),
                             const Spacer(),
                             if (chosen.contains(d))
-                              Icon(sfIcon('checkmark'),
-                                  size: 16, color: oc.accent),
+                              Icon(
+                                sfIcon('checkmark'),
+                                size: 16,
+                                color: oc.accent,
+                              ),
                           ],
                         ),
                       ),
@@ -927,9 +1368,13 @@ class _SettingsViewState extends State<SettingsView> {
                     width: double.infinity,
                     child: TextButton(
                       onPressed: () => Navigator.of(sheet).pop(chosen),
-                      child: Text('Done',
-                          style: TextStyle(
-                              color: oc.accent, fontWeight: FontWeight.w800)),
+                      child: Text(
+                        'Done',
+                        style: TextStyle(
+                          color: oc.accent,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -949,8 +1394,9 @@ class _SettingsViewState extends State<SettingsView> {
   /// line is a single trip.
   Future<void> _pickMessage(SettingsStore settings) async {
     Haptics.light();
-    final controller =
-        TextEditingController(text: settings.reminderCustomMessage);
+    final controller = TextEditingController(
+      text: settings.reminderCustomMessage,
+    );
     var mode = settings.reminderMessageMode;
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -959,8 +1405,9 @@ class _SettingsViewState extends State<SettingsView> {
       builder: (sheet) {
         final oc = sheet.oc;
         return Padding(
-          padding:
-              EdgeInsets.only(bottom: MediaQuery.of(sheet).viewInsets.bottom),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheet).viewInsets.bottom,
+          ),
           child: StatefulBuilder(
             builder: (context, setSheet) {
               return SafeArea(
@@ -971,12 +1418,15 @@ class _SettingsViewState extends State<SettingsView> {
                       padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Text('REMINDER MESSAGE',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
-                                color: oc.text)),
+                        child: Text(
+                          'REMINDER MESSAGE',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                            color: oc.text,
+                          ),
+                        ),
                       ),
                     ),
                     Container(height: 1, color: oc.border),
@@ -984,19 +1434,26 @@ class _SettingsViewState extends State<SettingsView> {
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: _segmented(oc, const [
-                          ('auto', 'AUTO'),
-                          ('custom', 'MY OWN'),
-                          ('mixed', 'MIXED'),
-                        ], mode, (v) => setSheet(() => mode = v)),
+                        child: _segmented(
+                          oc,
+                          const [
+                            ('auto', 'AUTO'),
+                            ('custom', 'MY OWN'),
+                            ('mixed', 'MIXED'),
+                          ],
+                          mode,
+                          (v) => setSheet(() => mode = v),
+                        ),
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(_messageModeHint(mode),
-                            style: TextStyle(fontSize: 12, color: oc.muted)),
+                        child: Text(
+                          _messageModeHint(mode),
+                          style: TextStyle(fontSize: 12, color: oc.muted),
+                        ),
                       ),
                     ),
                     if (mode != 'auto')
@@ -1029,17 +1486,22 @@ class _SettingsViewState extends State<SettingsView> {
                           Expanded(
                             child: TextButton(
                               onPressed: () => Navigator.of(sheet).pop(false),
-                              child: Text('Cancel',
-                                  style: TextStyle(color: oc.muted)),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(color: oc.muted),
+                              ),
                             ),
                           ),
                           Expanded(
                             child: TextButton(
                               onPressed: () => Navigator.of(sheet).pop(true),
-                              child: Text('Save',
-                                  style: TextStyle(
-                                      color: oc.accent,
-                                      fontWeight: FontWeight.w800)),
+                              child: Text(
+                                'Save',
+                                style: TextStyle(
+                                  color: oc.accent,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -1071,14 +1533,12 @@ class _SettingsViewState extends State<SettingsView> {
     (900, 'After 15 minutes'),
   ];
 
-
   String _autoLockLabel(int seconds) {
     for (final (v, label) in _autoLockOptions) {
       if (v == seconds) return label;
     }
     return 'Immediately';
   }
-
 
   Future<void> _pickAutoLockDelay(SettingsStore settings) async {
     Haptics.light();
@@ -1093,12 +1553,15 @@ class _SettingsViewState extends State<SettingsView> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                child: Text('ASK FOR FACE ID AGAIN',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                        color: oc.text)),
+                child: Text(
+                  'ASK FOR FACE ID AGAIN',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: oc.text,
+                  ),
+                ),
               ),
               Container(height: 1, color: oc.border),
               for (final (seconds, label) in _autoLockOptions)
@@ -1106,19 +1569,23 @@ class _SettingsViewState extends State<SettingsView> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(sheet).pop(seconds),
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 15,
+                    ),
                     child: Row(
                       children: [
-                        Text(label,
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: oc.text)),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: oc.text,
+                          ),
+                        ),
                         const Spacer(),
                         if (settings.autoLockGraceSeconds == seconds)
-                          Icon(sfIcon('checkmark'),
-                              size: 16, color: oc.accent),
+                          Icon(sfIcon('checkmark'), size: 16, color: oc.accent),
                       ],
                     ),
                   ),
@@ -1139,9 +1606,14 @@ class _SettingsViewState extends State<SettingsView> {
     settings.autoLockGraceSeconds = picked;
   }
 
-
-  Widget _toggleRow(ExpndColors oc, String icon, String title, String subtitle,
-      bool value, ValueChanged<bool> onChanged) {
+  Widget _toggleRow(
+    ExpndColors oc,
+    String icon,
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
@@ -1152,9 +1624,14 @@ class _SettingsViewState extends State<SettingsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600, color: oc.text)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: oc.text,
+                  ),
+                ),
                 Text(subtitle, style: TextStyle(fontSize: 11, color: oc.muted)),
               ],
             ),
@@ -1169,9 +1646,12 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-
-  Widget _segmented(ExpndColors oc, List<(String, String)> options,
-      String selected, ValueChanged<String> onSelect) {
+  Widget _segmented(
+    ExpndColors oc,
+    List<(String, String)> options,
+    String selected,
+    ValueChanged<String> onSelect,
+  ) {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -1186,17 +1666,25 @@ class _SettingsViewState extends State<SettingsView> {
             GestureDetector(
               onTap: () => onSelect(val),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: selected == val ? ExpndColors.gold : Colors.transparent,
+                  color: selected == val
+                      ? ExpndColors.gold
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(label,
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                        color: selected == val ? ExpndColors.ink : oc.muted)),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                    color: selected == val ? ExpndColors.ink : oc.muted,
+                  ),
+                ),
               ),
             ),
         ],
@@ -1212,57 +1700,60 @@ class _SettingsViewState extends State<SettingsView> {
       ('dark', 'moon.fill'),
       ('light', 'sun.max.fill'),
     ];
-    return sectionCard(
-      oc,
-      'APPEARANCE',
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(sfIcon('paintbrush.fill'), size: 20, color: oc.accent),
-            const SizedBox(width: 12),
-            Text('Theme',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: oc.text)),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: oc.border.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: oc.border, width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final (mode, icon) in modes)
-                    GestureDetector(
-                      onTap: () {
-                        Haptics.light();
-                        settings.appearanceMode = mode;
-                      },
-                      child: Container(
-                        width: 30,
-                        height: 28,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: settings.appearanceMode == mode
-                              ? ExpndColors.gold
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Icon(sfIcon(icon),
-                            size: 11,
-                            color: settings.appearanceMode == mode
-                                ? ExpndColors.ink
-                                : oc.muted),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Icon(sfIcon('paintbrush.fill'), size: 20, color: oc.accent),
+          const SizedBox(width: 12),
+          Text(
+            'Theme',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: oc.text,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: oc.border.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: oc.border, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (mode, icon) in modes)
+                  GestureDetector(
+                    onTap: () {
+                      Haptics.light();
+                      settings.appearanceMode = mode;
+                    },
+                    child: Container(
+                      width: 30,
+                      height: 28,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: settings.appearanceMode == mode
+                            ? ExpndColors.gold
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        sfIcon(icon),
+                        size: 11,
+                        color: settings.appearanceMode == mode
+                            ? ExpndColors.ink
+                            : oc.muted,
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1270,9 +1761,14 @@ class _SettingsViewState extends State<SettingsView> {
   // ── Data ─────────────────────────────────────────────────────────────────
 
   Widget _dataSection(ExpndColors oc, AppStore store, String symbol) {
-    Widget row(String icon, Color iconColor, String title, String subtitle,
-        VoidCallback onTap,
-        {bool enabled = true}) {
+    Widget row(
+      String icon,
+      Color iconColor,
+      String title,
+      String subtitle,
+      VoidCallback onTap, {
+      bool enabled = true,
+    }) {
       return GestureDetector(
         onTap: enabled ? onTap : null,
         behavior: HitTestBehavior.opaque,
@@ -1288,14 +1784,20 @@ class _SettingsViewState extends State<SettingsView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title,
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: title == 'Clear All Data'
-                                  ? ExpndColors.red
-                                  : oc.text)),
-                      Text(subtitle, style: TextStyle(fontSize: 11, color: oc.muted)),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: title == 'Clear All Data'
+                              ? ExpndColors.red
+                              : oc.text,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: TextStyle(fontSize: 11, color: oc.muted),
+                      ),
                     ],
                   ),
                 ),
@@ -1308,46 +1810,70 @@ class _SettingsViewState extends State<SettingsView> {
     }
 
     final count = store.transactions.length;
-    final hasAnything = count > 0 ||
+    final hasAnything =
+        count > 0 ||
         store.accounts.isNotEmpty ||
         store.goals.isNotEmpty ||
         store.emis.isNotEmpty;
-    return sectionCard(
-      oc,
-      'DATA',
-      Column(
-        children: [
-          // Everything lives on this device and nowhere else, so a backup file
-          // is the only thing standing between the user and a total loss.
-          // Listed first for that reason.
-          row('lock.shield.fill', ExpndColors.gold, 'Back Up Everything',
-              'Accounts, budgets, goals, EMIs, receipts', () => _backup(store),
-              enabled: hasAnything),
-          sectionDivider(oc),
-          _autoBackupRow(oc, store),
-          sectionDivider(oc),
-          row('arrow.down.circle.fill', ExpndColors.green, 'Restore Backup',
-              'Replaces everything from a backup file', () => _restore(store)),
-          sectionDivider(oc),
-          row('square.and.arrow.up', ExpndColors.gold, 'Import Transactions',
-              'Load from CSV file', () => _importCSV(store)),
-          sectionDivider(oc),
-          row('square.and.arrow.up', ExpndColors.green, 'Export Transactions',
-              'Transactions only — use Back Up for everything',
-              () => _exportCSV(store),
-              enabled: count > 0),
-          sectionDivider(oc),
-          row('doc.on.doc', ExpndColors.gold, 'Monthly Statement',
-              'A readable summary of a month, ready to share',
-              () => _exportStatement(store),
-              enabled: count > 0),
-          sectionDivider(oc),
-          row('trash.fill', ExpndColors.red, 'Clear All Data',
-              '$count transaction${count == 1 ? "" : "s"} will be removed',
-              () => _confirmClear(store),
-              enabled: count > 0),
-        ],
-      ),
+    return Column(
+      children: [
+        // Everything lives on this device and nowhere else, so a backup file
+        // is the only thing standing between the user and a total loss.
+        // Listed first for that reason.
+        row(
+          'lock.shield.fill',
+          ExpndColors.gold,
+          'Back Up Everything',
+          'Accounts, budgets, goals, EMIs, receipts',
+          () => _backup(store),
+          enabled: hasAnything,
+        ),
+        sectionDivider(oc),
+        _autoBackupRow(oc, store),
+        sectionDivider(oc),
+        row(
+          'arrow.down.circle.fill',
+          ExpndColors.green,
+          'Restore Backup',
+          'Replaces everything from a backup file',
+          () => _restore(store),
+        ),
+        sectionDivider(oc),
+        row(
+          'square.and.arrow.up',
+          ExpndColors.gold,
+          'Import Transactions',
+          'Load from CSV file',
+          () => _importCSV(store),
+        ),
+        sectionDivider(oc),
+        row(
+          'square.and.arrow.up',
+          ExpndColors.green,
+          'Export Transactions',
+          'Transactions only — use Back Up for everything',
+          () => _exportCSV(store),
+          enabled: count > 0,
+        ),
+        sectionDivider(oc),
+        row(
+          'doc.on.doc',
+          ExpndColors.gold,
+          'Monthly Statement',
+          'A readable summary of a month, ready to share',
+          () => _exportStatement(store),
+          enabled: count > 0,
+        ),
+        sectionDivider(oc),
+        row(
+          'trash.fill',
+          ExpndColors.red,
+          'Clear All Data',
+          '$count transaction${count == 1 ? "" : "s"} will be removed',
+          () => _confirmClear(store),
+          enabled: count > 0,
+        ),
+      ],
     );
   }
 
@@ -1372,8 +1898,8 @@ class _SettingsViewState extends State<SettingsView> {
       return 'Last snapshot $days days ago';
     }
 
-    final stale = on && (last == null ||
-        DateTime.now().difference(last).inDays >= 3);
+    final stale =
+        on && (last == null || DateTime.now().difference(last).inDays >= 3);
 
     return Column(
       children: [
@@ -1381,27 +1907,36 @@ class _SettingsViewState extends State<SettingsView> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(sfIcon('clock.fill'),
-                  size: 20, color: stale ? ExpndColors.red : ExpndColors.green),
+              Icon(
+                sfIcon('clock.fill'),
+                size: 20,
+                color: stale ? ExpndColors.red : ExpndColors.green,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Automatic Snapshots',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: oc.text)),
-                    Text(subtitle(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: stale ? ExpndColors.red : oc.muted)),
+                    Text(
+                      'Automatic Snapshots',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: oc.text,
+                      ),
+                    ),
+                    Text(
+                      subtitle(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: stale ? ExpndColors.red : oc.muted,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1441,16 +1976,21 @@ class _SettingsViewState extends State<SettingsView> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(4),
             border: Border.all(
-                color: ExpndColors.gold.withValues(alpha: 0.5), width: 1.5),
+              color: ExpndColors.gold.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
           ),
-          child: Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
-                  color: oc.accent)),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: oc.accent,
+            ),
+          ),
         ),
       ),
     );
@@ -1486,15 +2026,20 @@ class _SettingsViewState extends State<SettingsView> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 14),
-            Text('RESTORE A SNAPSHOT',
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
-                    color: oc.text)),
+            Text(
+              'RESTORE A SNAPSHOT',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: oc.text,
+              ),
+            ),
             const SizedBox(height: 2),
-            Text('Replaces everything currently in the app',
-                style: TextStyle(fontSize: 11, color: oc.muted)),
+            Text(
+              'Replaces everything currently in the app',
+              style: TextStyle(fontSize: 11, color: oc.muted),
+            ),
             const SizedBox(height: 10),
             for (final f in files)
               GestureDetector(
@@ -1503,20 +2048,25 @@ class _SettingsViewState extends State<SettingsView> {
                 child: Container(
                   width: double.infinity,
                   color: Colors.transparent,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 13,
+                  ),
                   child: Row(
                     children: [
                       Icon(sfIcon('clock.fill'), size: 15, color: oc.accent),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(_snapshotLabel(f),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: oc.text)),
+                        child: Text(
+                          _snapshotLabel(f),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: oc.text,
+                          ),
+                        ),
                       ),
                       Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
                     ],
@@ -1551,15 +2101,14 @@ class _SettingsViewState extends State<SettingsView> {
         '${when.minute.toString().padLeft(2, '0')}';
   }
 
-
-
   Future<void> _backup(AppStore store) async {
     final settings = context.read<SettingsStore>();
     try {
       final data = buildBackup(store, settings);
       final dir = await getTemporaryDirectory();
       final stamp = DateTime.now();
-      final name = 'expnd-backup-${stamp.year}-'
+      final name =
+          'expnd-backup-${stamp.year}-'
           '${stamp.month.toString().padLeft(2, '0')}-'
           '${stamp.day.toString().padLeft(2, '0')}.json';
       final file = File('${dir.path}/$name');
@@ -1567,7 +2116,8 @@ class _SettingsViewState extends State<SettingsView> {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path)],
-          text: 'EXPND backup — keep this file safe. '
+          text:
+              'EXPND backup — keep this file safe. '
               'Restoring it brings everything back.',
         ),
       );
@@ -1576,10 +2126,11 @@ class _SettingsViewState extends State<SettingsView> {
     }
   }
 
-
   Future<void> _restore(AppStore store) async {
     final result = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['json']);
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
     if (result == null || result.files.single.path == null) return;
     await _restoreFromFile(File(result.files.single.path!));
   }
@@ -1611,26 +2162,33 @@ class _SettingsViewState extends State<SettingsView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Restore this backup?',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: oc.text)),
+                Text(
+                  'Restore this backup?',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: oc.text,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
-                    'Everything currently in EXPND is replaced by the '
-                    'contents of the file. This cannot be undone.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: oc.muted)),
+                  'Everything currently in EXPND is replaced by the '
+                  'contents of the file. This cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: oc.muted),
+                ),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: TextButton(
                     onPressed: () => Navigator.of(sheet).pop(true),
-                    child: Text('Replace Everything',
-                        style: TextStyle(
-                            color: ExpndColors.red,
-                            fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Replace Everything',
+                      style: TextStyle(
+                        color: ExpndColors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 SizedBox(
@@ -1654,10 +2212,12 @@ class _SettingsViewState extends State<SettingsView> {
       final summary = await restoreBackup(content, store, settings, dir);
       Haptics.success();
       if (!mounted) return;
-      _snack('Restored ${summary.transactions} transaction'
-          '${summary.transactions == 1 ? "" : "s"}, '
-          '${summary.accounts} account${summary.accounts == 1 ? "" : "s"}'
-          '${summary.photos > 0 ? ', ${summary.photos} receipt${summary.photos == 1 ? "" : "s"}' : ''}.');
+      _snack(
+        'Restored ${summary.transactions} transaction'
+        '${summary.transactions == 1 ? "" : "s"}, '
+        '${summary.accounts} account${summary.accounts == 1 ? "" : "s"}'
+        '${summary.photos > 0 ? ', ${summary.photos} receipt${summary.photos == 1 ? "" : "s"}' : ''}.',
+      );
     } on BackupException catch (e) {
       Haptics.warning();
       if (mounted) _snack(e.message);
@@ -1676,8 +2236,7 @@ class _SettingsViewState extends State<SettingsView> {
     final oc = context.oc;
     final months = <DateTime>{
       for (final t in store.transactions) DateTime(t.date.year, t.date.month),
-    }.toList()
-      ..sort((a, b) => b.compareTo(a));
+    }.toList()..sort((a, b) => b.compareTo(a));
     if (months.isEmpty) return;
 
     final chosen = await showModalBottomSheet<DateTime>(
@@ -1689,12 +2248,15 @@ class _SettingsViewState extends State<SettingsView> {
           children: [
             const SizedBox(height: 14),
             Center(
-              child: Text('STATEMENT FOR',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                      color: oc.text)),
+              child: Text(
+                'STATEMENT FOR',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                  color: oc.text,
+                ),
+              ),
             ),
             const SizedBox(height: 10),
             for (final m in months.take(24))
@@ -1704,18 +2266,23 @@ class _SettingsViewState extends State<SettingsView> {
                 child: Container(
                   width: double.infinity,
                   color: Colors.transparent,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 13,
+                  ),
                   child: Row(
                     children: [
                       Icon(sfIcon('calendar'), size: 15, color: oc.accent),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(_statementMonthLabel(m),
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: oc.text)),
+                        child: Text(
+                          _statementMonthLabel(m),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: oc.text,
+                          ),
+                        ),
                       ),
                       Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
                     ],
@@ -1731,8 +2298,11 @@ class _SettingsViewState extends State<SettingsView> {
 
     final settings = context.read<SettingsStore>();
     final bytes = await buildMonthlyStatementPdf(
-        store, settings.currencyCode, chosen,
-        userName: settings.userName);
+      store,
+      settings.currencyCode,
+      chosen,
+      userName: settings.userName,
+    );
     final dir = await getTemporaryDirectory();
     final name =
         'expnd-statement-${chosen.year}-${chosen.month.toString().padLeft(2, '0')}.pdf';
@@ -1740,15 +2310,26 @@ class _SettingsViewState extends State<SettingsView> {
     await file.writeAsBytes(bytes);
     await SharePlus.instance.share(
       ShareParams(
-          files: [XFile(file.path)],
-          text: 'EXPND statement — ${_statementMonthLabel(chosen)}'),
+        files: [XFile(file.path)],
+        text: 'EXPND statement — ${_statementMonthLabel(chosen)}',
+      ),
     );
   }
 
   String _statementMonthLabel(DateTime m) {
     const names = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${names[m.month - 1]} ${m.year}';
   }
@@ -1756,9 +2337,10 @@ class _SettingsViewState extends State<SettingsView> {
   Future<void> _exportCSV(AppStore store) async {
     final buf = StringBuffer('Date,Category,Type,Amount,Note\n');
     for (final t in store.transactions) {
-      final note = t.note.replaceAll(',', ';');
       buf.write(
-          '${_shortDate(t.date)},${t.category.raw},${t.type.raw},${t.amount.toStringAsFixed(2)},$note\n');
+        '${_csv(t.date.toIso8601String())},${_csv(t.category.raw)},'
+        '${_csv(t.type.raw)},${t.amount.toStringAsFixed(2)},${_csv(t.note)}\n',
+      );
     }
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/expnd-transactions.csv');
@@ -1768,15 +2350,16 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-
   Future<void> _importCSV(AppStore store) async {
     final result = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['csv', 'txt']);
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'txt'],
+    );
     if (result == null || result.files.single.path == null) return;
     final content = await File(result.files.single.path!).readAsString();
     final lines = content
         .split(RegExp(r'\r?\n'))
-        .map((l) => l.trim())
+        .map(_parseCsvLine)
         .where((l) => l.isNotEmpty)
         .toList();
     if (lines.length < 2) {
@@ -1785,28 +2368,67 @@ class _SettingsViewState extends State<SettingsView> {
     }
     var added = 0;
     for (final line in lines.skip(1)) {
-      final cols = line.split(',');
+      final cols = line;
       if (cols.length < 4) continue;
       final date = _parseDate(cols[0].trim());
       final amount = double.tryParse(cols[3].trim());
       if (date == null || amount == null || amount <= 0) continue;
-      final type = cols[2].trim().toLowerCase() == 'income'
-          ? TransactionType.income
-          : TransactionType.expense;
+      final type = TransactionType.fromRaw(
+        cols[2].trim().isEmpty
+            ? null
+            : cols[2].trim()[0].toUpperCase() +
+                  cols[2].trim().substring(1).toLowerCase(),
+      );
       final cat = TransactionCategory.values.firstWhere(
-          (c) => c.raw.toLowerCase() == cols[1].trim().toLowerCase(),
-          orElse: () => TransactionCategory.other);
-      store.addTransaction(Transaction(
-        note: cols.length >= 5 ? cols[4].trim() : '',
-        amount: amount,
-        category: cat,
-        type: type,
-        date: date,
-      ));
+        (c) => c.raw.toLowerCase() == cols[1].trim().toLowerCase(),
+        orElse: () => TransactionCategory.other,
+      );
+      final custom = store.customCategories
+          .where((c) => c.name.toLowerCase() == cols[1].trim().toLowerCase())
+          .firstOrNull;
+      store.addTransaction(
+        Transaction(
+          note: cols.length >= 5 ? cols[4].trim() : '',
+          amount: amount,
+          category: cat,
+          type: type,
+          date: date,
+          customCategoryId: custom?.id,
+        ),
+      );
       added++;
     }
     Haptics.success();
     _snack(added > 0 ? 'Imported $added transactions' : 'No valid rows found.');
+  }
+
+  String _csv(String value) {
+    final escaped = value.replaceAll('"', '""');
+    return RegExp(r'[,"\r\n]').hasMatch(value) ? '"$escaped"' : escaped;
+  }
+
+  List<String> _parseCsvLine(String line) {
+    final out = <String>[];
+    final field = StringBuffer();
+    var quoted = false;
+    for (var i = 0; i < line.length; i++) {
+      final ch = line[i];
+      if (ch == '"') {
+        if (quoted && i + 1 < line.length && line[i + 1] == '"') {
+          field.write('"');
+          i++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (ch == ',' && !quoted) {
+        out.add(field.toString().trim());
+        field.clear();
+      } else {
+        field.write(ch);
+      }
+    }
+    if (field.isNotEmpty || out.isNotEmpty) out.add(field.toString().trim());
+    return out;
   }
 
   DateTime? _parseDate(String s) {
@@ -1817,8 +2439,18 @@ class _SettingsViewState extends State<SettingsView> {
     final m = RegExp(r'^(\w{3}) (\d{1,2}), (\d{4})$').firstMatch(s);
     if (m != null) {
       const months = {
-        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        'Jan': 1,
+        'Feb': 2,
+        'Mar': 3,
+        'Apr': 4,
+        'May': 5,
+        'Jun': 6,
+        'Jul': 7,
+        'Aug': 8,
+        'Sep': 9,
+        'Oct': 10,
+        'Nov': 11,
+        'Dec': 12,
       };
       final mm = months[m.group(1)];
       if (mm != null) {
@@ -1828,12 +2460,14 @@ class _SettingsViewState extends State<SettingsView> {
     // MM/dd/yyyy
     final slash = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(s);
     if (slash != null) {
-      return DateTime(int.parse(slash.group(3)!), int.parse(slash.group(1)!),
-          int.parse(slash.group(2)!));
+      return DateTime(
+        int.parse(slash.group(3)!),
+        int.parse(slash.group(1)!),
+        int.parse(slash.group(2)!),
+      );
     }
     return null;
   }
-
 
   void _confirmClear(AppStore store) {
     final oc = context.oc;
@@ -1847,14 +2481,20 @@ class _SettingsViewState extends State<SettingsView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Clear all transactions?',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w900, color: oc.text)),
+              Text(
+                'Clear all transactions?',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: oc.text,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
-                  'This will permanently delete $count transaction${count == 1 ? "" : "s"}. This cannot be undone.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: oc.muted)),
+                'This will permanently delete $count transaction${count == 1 ? "" : "s"}. This cannot be undone.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: oc.muted),
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -1866,9 +2506,13 @@ class _SettingsViewState extends State<SettingsView> {
                     Haptics.warning();
                     Navigator.of(context).pop();
                   },
-                  child: Text('Clear All Data',
-                      style: TextStyle(
-                          color: ExpndColors.red, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Clear All Data',
+                    style: TextStyle(
+                      color: ExpndColors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               SizedBox(
@@ -1885,18 +2529,26 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-
   void _snack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   String _shortDate(DateTime d) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
@@ -1914,30 +2566,32 @@ class SettingsAvatarAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final oc = context.oc;
     final name = context.watch<SettingsStore>().userName;
-    final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+    final initial = name.trim().isNotEmpty
+        ? name.trim().characters.first.toUpperCase()
+        : '?';
     return HeaderAction.custom(
       semanticLabel: 'Profile and settings',
-      // Only the letter — HeaderAction.custom already draws the 36pt square
-      // frame every header control wears. Drawing another box inside it gave
-      // a doubled border that sat a hair off its neighbours, and left the tap
-      // target the size of the glyph instead of the square.
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
           Haptics.light();
           FocusManager.instance.primaryFocus?.unfocus();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SettingsView()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const SettingsView()));
         },
         child: SizedBox.expand(
           child: Center(
-            child: Text(
-              initial,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: oc.accent,
+            child: CircleAvatar(
+              radius: 16,
+              backgroundColor: oc.card,
+              foregroundColor: oc.text,
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),

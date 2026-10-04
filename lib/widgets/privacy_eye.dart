@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../store/settings_store.dart';
-import '../theme/sf_icons.dart';
 
 /// The eye button: one tap masks every amount in the app, another reveals them.
 ///
@@ -33,34 +32,18 @@ class PrivacyEyeButton extends StatelessWidget {
     final settings = context.watch<SettingsStore>();
     final hidden = settings.amountsHidden;
 
-    return Semantics(
-      button: true,
-      label: hidden ? 'Show amounts' : 'Hide amounts',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          Haptics.light();
-          settings.amountsHidden = !hidden;
-        },
-        // Padding rather than a bare icon: the glyph is small, the tap target
-        // shouldn't be.
-        child: Padding(
-          padding: padding,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(scale: animation, child: child),
-            ),
-            child: Icon(
-              sfIcon(hidden ? 'eye.slash' : 'eye'),
-              // Keyed so AnimatedSwitcher sees the swap as a new child.
-              key: ValueKey(hidden),
-              size: size,
-              color: color,
-            ),
-          ),
-        ),
+    return IconButton(
+      tooltip: hidden ? 'Show amounts' : 'Hide amounts',
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      padding: padding,
+      onPressed: () {
+        Haptics.light();
+        settings.amountsHidden = !hidden;
+      },
+      icon: Icon(
+        hidden ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: size,
+        color: color,
       ),
     );
   }

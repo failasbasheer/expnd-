@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/apple_intelligence.dart';
 import '../services/reminders.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
@@ -14,7 +15,9 @@ import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/app_header.dart';
+import '../widgets/disclosure_section.dart';
 import '../widgets/neopop.dart';
+import '../widgets/money_field.dart';
 
 /// One cell of the category grid — exactly one of [builtin]/[custom] is set.
 /// A single list of these lets built-in and custom categories be sorted
@@ -27,6 +30,7 @@ Future<void> showAddTransaction(
   Transaction? editing,
   Transaction? duplicating,
   String? initialText,
+  PendingCapture? filing,
 }) {
   return Navigator.of(context).push(
     MaterialPageRoute(
@@ -35,6 +39,7 @@ Future<void> showAddTransaction(
         editing: editing,
         duplicating: duplicating,
         initialText: initialText,
+        filing: filing,
       ),
     ),
   );
@@ -48,11 +53,20 @@ class AddTransactionScreen extends StatefulWidget {
   /// re-typing it every time is the friction that stops people logging.
   final Transaction? duplicating;
   final String? initialText;
+
+  /// Set when this screen is filing an amount captured outside the app (a
+  /// widget button, the Lock Screen, Siri). The amount and note are known; the
+  /// point of opening the screen is to attach the account and category the
+  /// capture couldn't know. Saving commits both sides at once, so a capture is
+  /// never both filed and still waiting.
+  final PendingCapture? filing;
+
   const AddTransactionScreen({
     super.key,
     this.editing,
     this.duplicating,
     this.initialText,
+    this.filing,
   });
 
   @override
@@ -72,8 +86,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Account? _account;
   Account? _toAccount;
   String? _banner;
+  bool _showAllCategories = false;
   final List<String> _tags = [];
   final _tagCtrl = TextEditingController();
+  Timer? _categorySuggestionTimer;
+  TransactionCategory? _aiCategorySuggestion;
+  CoachSource _aiCategorySource = CoachSource.rules;
+  int _categorySuggestionRequest = 0;
 
   /// Non-empty when this entry is one receipt spread over several categories.
   final List<({double amount, TransactionCategory category, String note})>
@@ -89,7 +108,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final e = widget.editing;
     if (e != null) {
       _type = e.type;
-      _amountCtrl.text = e.amount.toStringAsFixed(2);
+      _amountCtrl.text = e.amount.toStringAsFixed(
+        currencyDecimalDigits(settings.currencyCode),
+      );
       _noteCtrl.text = e.note;
       _date = e.date;
       _isRecurring = e.isRecurring;
@@ -105,13 +126,33 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       // rather than whenever the original happened.
       final d = widget.duplicating!;
       _type = d.type;
-      _amountCtrl.text = d.amount.toStringAsFixed(2);
+      _amountCtrl.text = d.amount.toStringAsFixed(
+        currencyDecimalDigits(settings.currencyCode),
+      );
       _noteCtrl.text = d.note;
       _tags.addAll(d.tags);
       _account = store.accountFor(d.accountId);
       _toAccount = store.accountFor(d.toAccountId);
       _customCategory = store.customCategoryFor(d.customCategoryId);
       if (_customCategory == null) _category = d.category;
+    } else if (widget.filing != null) {
+      // A capture is always an expense: nothing outside the app can log income
+      // or a transfer, and both would need a counterparty account anyway.
+      final c = widget.filing!;
+      _type = TransactionType.expense;
+      _amountCtrl.text = c.amount.toStringAsFixed(
+        currencyDecimalDigits(settings.currencyCode),
+      );
+      _noteCtrl.text = c.note;
+      // Dated when it was captured, not when it's filed — the tap was the
+      // moment the money moved, and filing can happen days later.
+      _date = c.capturedAt;
+      _account = store.accounts.isNotEmpty ? store.accounts.first : null;
+      // Quick Add lets the user pick a category at capture time; carry it
+      // through so filing doesn't ask again. Captures from the widget or Siri
+      // have no category and leave the grid unselected, as before.
+      _customCategory = store.customCategoryFor(c.customCategoryId);
+      if (_customCategory == null) _category = c.category;
     } else {
       _type = settings.defaultTransactionType == 'income'
           ? TransactionType.income
@@ -120,6 +161,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       if (widget.initialText != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Future.delayed(const Duration(milliseconds: 300), () {
+            if (!mounted) return;
             if (!_parseText(widget.initialText!)) {
               _showBanner("COULDN'T PARSE AMOUNT");
             }
@@ -131,10 +173,112 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   @override
   void dispose() {
+    _categorySuggestionTimer?.cancel();
+    _categorySuggestionRequest++;
     _amountCtrl.dispose();
     _noteCtrl.dispose();
     _tagCtrl.dispose();
     super.dispose();
+  }
+
+  void _onNoteChanged(String value) {
+    setState(() {});
+    _categorySuggestionTimer?.cancel();
+    final note = value.trim();
+    if (_type == TransactionType.transfer || note.length < 3) {
+      if (_aiCategorySuggestion != null) {
+        setState(() => _aiCategorySuggestion = null);
+      }
+      return;
+    }
+    final requestId = ++_categorySuggestionRequest;
+    _categorySuggestionTimer = Timer(
+      const Duration(milliseconds: 420),
+      () async {
+        final allowed = TransactionCategory.categoriesFor(_type);
+        final answer = await AppleIntelligence.suggestCategory(
+          note,
+          allowed.map((c) => c.raw).toList(growable: false),
+        );
+        if (!mounted || requestId != _categorySuggestionRequest) return;
+        final suggestion = answer == null
+            ? null
+            : allowed.where((c) => c.raw == answer.category).firstOrNull;
+        setState(() {
+          _aiCategorySuggestion = suggestion;
+          if (answer != null) _aiCategorySource = answer.source;
+        });
+      },
+    );
+  }
+
+  Widget _aiCategoryChip(ExpndColors oc) {
+    final suggestion = _aiCategorySuggestion;
+    if (suggestion == null || suggestion == _category) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Semantics(
+        button: true,
+        label: _aiCategorySource.isAi
+            ? 'AI suggests ${suggestion.raw}'
+            : 'Suggested category ${suggestion.raw}',
+        hint: 'Applies this category',
+        child: GestureDetector(
+          onTap: () {
+            Haptics.light();
+            setState(() {
+              _category = suggestion;
+              _customCategory = null;
+              _aiCategorySuggestion = null;
+            });
+            _showBanner(
+              _aiCategorySource.isAi
+                  ? 'AI CATEGORY APPLIED'
+                  : 'CATEGORY APPLIED',
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: ExpndColors.gold.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(ExpndRadius.button),
+              border: Border.all(
+                color: ExpndColors.gold.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  sfIcon(_aiCategorySource.icon),
+                  size: 12,
+                  color: oc.accent,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    _aiCategorySource.isAi
+                        ? 'AI suggests ${suggestion.raw}'
+                        : 'Suggested: ${suggestion.raw}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: oc.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(sfIcon('checkmark'), size: 11, color: oc.accent),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
@@ -207,6 +351,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   // ── Clipboard scan ──────────────────────────────────────────────────────
   Future<void> _scanClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
     final text = data?.text ?? '';
     if (text.isEmpty) {
       _showBanner('NOTHING ON CLIPBOARD');
@@ -274,11 +419,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: ImageSource.gallery);
-    if (xfile == null) return;
+    if (xfile == null || !mounted) return;
     final dir = await getApplicationDocumentsDirectory();
     final path =
         '${dir.path}/receipt_${DateTime.now().microsecondsSinceEpoch}.jpg';
     await File(xfile.path).copy(path);
+    if (!mounted) return;
     setState(() => _photoPath = path);
   }
 
@@ -313,6 +459,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         accountId: _account?.id,
         tags: List<String>.from(_tags),
       );
+      // Splitting a capture across categories is a legitimate way to file it —
+      // one tap at the till, several lines on the receipt — so clear it here
+      // too, or it would sit in the inbox after already being recorded.
+      final splitFiling = widget.filing;
+      if (splitFiling != null) store.deletePendingCapture(splitFiling);
       Navigator.of(context).pop();
       return;
     }
@@ -350,7 +501,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       t.tags = List<String>.from(_tags);
       t.accountId = _account?.id;
       t.toAccountId = _type == TransactionType.transfer ? _toAccount?.id : null;
-      store.addTransaction(t);
+      final filing = widget.filing;
+      if (filing != null) {
+        store.filePendingCapture(filing, t);
+      } else {
+        store.addTransaction(t);
+      }
     }
     // A new expense can tip the month over budget; refresh the alerts so that
     // crossing is noticed now rather than only on the next launch. Fire and
@@ -367,29 +523,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     return Scaffold(
       backgroundColor: oc.bg,
-      appBar: AppBar(
-        backgroundColor: oc.bg,
-        elevation: 0,
-        // A bare 16pt glyph read as decoration rather than a control. Use the
-        // same bordered 36pt face every other screen closes with, and let it
-        // start at the 20pt content gutter so it lines up with the fields
-        // below. Default leadingWidth (56) is exactly gutter + face.
-        leading: Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 20),
-            child: HeaderAction(
-              icon: 'xmark',
-              // Release focus first, or iOS leaves the keyboard stuck open
-              // over the screen behind this one.
-              onPressed: () {
-                FocusManager.instance.primaryFocus?.unfocus();
-                Navigator.of(context).pop();
-              },
-              semanticLabel: 'Close',
-            ),
+      appBar: ExpndPageBar(
+        title: _isEditing ? 'Edit transaction' : 'Add transaction',
+        actions: [
+          HeaderAction(
+            icon: 'xmark',
+            onPressed: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+              Navigator.of(context).pop();
+            },
+            semanticLabel: 'Close transaction',
           ),
-        ),
+        ],
       ),
       body: Stack(
         children: [
@@ -456,22 +601,39 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                           ),
                         ),
                       ),
-                      if (_type != TransactionType.transfer && !_isEditing) ...[
-                        const SizedBox(height: 12),
-                        _splitToggle(oc),
-                      ],
                       const SizedBox(height: 22),
                       _noteAndDate(oc),
-                      const SizedBox(height: 22),
-                      _tagsSection(oc, store),
-                      const SizedBox(height: 22),
-                      _recurringSection(oc),
-                      const SizedBox(height: 22),
-                      _photoSection(oc),
                       if (accounts.isNotEmpty) ...[
                         const SizedBox(height: 22),
                         _accountSection(store),
                       ],
+                      const SizedBox(height: 22),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: DisclosureSection(
+                          title: 'More options',
+                          subtitle:
+                              'Tags, repeating payments, receipts and splits',
+                          initiallyExpanded:
+                              _tags.isNotEmpty ||
+                              _isRecurring ||
+                              _photoPath != null,
+                          child: Column(
+                            children: [
+                              if (_type != TransactionType.transfer &&
+                                  !_isEditing) ...[
+                                _splitToggle(oc),
+                                const SizedBox(height: 22),
+                              ],
+                              _tagsSection(oc, store),
+                              const SizedBox(height: 22),
+                              _recurringSection(oc),
+                              const SizedBox(height: 22),
+                              _photoSection(oc),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -499,28 +661,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     child: Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _isEditing ? 'EDIT TRANSACTION' : 'ADD TRANSACTION',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  color: oc.text,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _isEditing
-                    ? 'update the details below'
-                    : 'record your income, expense or transfer',
-                style: TextStyle(fontSize: 11, color: oc.muted),
-              ),
-            ],
+          child: Text(
+            _isEditing
+                ? 'Update the details below'
+                : 'Record income, spending, or a transfer',
+            style: TextStyle(fontSize: 12, color: oc.muted),
           ),
         ),
+        const SizedBox(width: 12),
         if (!_isEditing) _scanButton(oc),
       ],
     ),
@@ -541,11 +689,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           Icon(sfIcon('doc.on.clipboard'), size: 11, color: oc.muted),
           const SizedBox(width: 5),
           Text(
-            'SCAN',
+            'Paste',
             style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
               color: oc.muted,
             ),
           ),
@@ -562,7 +710,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           Expanded(
             child: _typeButton(
               TransactionType.income,
-              'INCOME',
+              'Income',
               'arrow.up',
               ExpndColors.green,
               ExpndColors.greenDk,
@@ -572,7 +720,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           Expanded(
             child: _typeButton(
               TransactionType.expense,
-              'EXPENSE',
+              'Expense',
               'arrow.down',
               ExpndColors.red,
               ExpndColors.redDark,
@@ -583,7 +731,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             Expanded(
               child: _typeButton(
                 TransactionType.transfer,
-                'TRANSFER',
+                'Transfer',
                 'arrow.left.arrow.right',
                 ExpndColors.gold,
                 ExpndColors.goldDark,
@@ -604,17 +752,25 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   ) {
     final oc = context.oc;
     final selected = _type == type;
-    return NeoPopElevated(
-      faceColor: selected ? active : oc.surface,
-      depthColor: selected ? activeDark : oc.edge,
-      borderColor: selected ? activeDark : oc.border,
-      depth: 4,
-      cornerRadius: 6,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: selected ? active.withValues(alpha: 0.14) : oc.surface,
+        borderRadius: BorderRadius.circular(ExpndRadius.button),
+        border: Border.all(
+          color: selected ? active : oc.border,
+          width: selected ? 1.6 : 1,
+        ),
+      ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(ExpndRadius.button),
         onTap: () {
           Haptics.light();
           setState(() {
             _type = type;
+            _aiCategorySuggestion = null;
+            // Split allocations are type-specific. Never carry stale split
+            // rows across an income/expense/transfer switch.
+            _splitLines.clear();
             final valid = TransactionCategory.categoriesFor(type);
             if (_category != null && !valid.contains(_category)) {
               _category = null;
@@ -625,6 +781,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               _customCategory = null;
             }
           });
+          _onNoteChanged(_noteCtrl.text);
         },
         child: Padding(
           // The three segments share the width equally, so the longest label
@@ -644,19 +801,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 Icon(
                   sfIcon(icon),
                   size: 13,
-                  color: selected ? ExpndColors.ink : oc.muted,
+                  color: selected ? oc.text : oc.muted,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     // Keeps the neoPOP wide tracking; 11pt is the size at
                     // which TRANSFER still clears a third of the row, so
                     // all three labels render unscaled and identical.
                     letterSpacing: 1.4,
-                    color: selected ? ExpndColors.ink : oc.muted,
+                    color: selected ? oc.text : oc.muted,
                   ),
                 ),
               ],
@@ -679,9 +836,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
                   color: oc.muted,
                 ),
               ),
@@ -732,6 +889,22 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     final oc = context.oc;
     final hasCustoms = entries.any((e) => e.custom != null);
+    final visibleEntries = _showAllCategories || entries.length <= 6
+        ? entries
+        : entries.take(6).toList();
+
+    // Editing or filing should always show the current category, even when it
+    // isn't among the six most-used choices.
+    final selected = entries
+        .where(
+          (e) => e.builtin != null
+              ? e.builtin == _category
+              : e.custom?.id == _customCategory?.id,
+        )
+        .firstOrNull;
+    if (selected != null && !visibleEntries.contains(selected)) {
+      visibleEntries[visibleEntries.length - 1] = selected;
+    }
 
     return _sectionBlock(
       'CATEGORY',
@@ -746,13 +919,50 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             crossAxisSpacing: 10,
             childAspectRatio: 1.35,
             children: [
-              for (final e in entries)
+              for (final e in visibleEntries)
                 e.builtin != null
                     ? _categoryButton(e.builtin!)
                     : _customCategoryButton(e.custom!),
               _createCategoryButton(),
             ],
           ),
+          if (entries.length > 6)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () =>
+                  setState(() => _showAllCategories = !_showAllCategories),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 14, bottom: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _showAllCategories
+                            ? 'Show fewer categories'
+                            : 'Show all categories',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: oc.accent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _showAllCategories
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      size: 16,
+                      color: oc.accent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Long-press isn't self-evident, so name the gesture — but only once
           // there's a custom category it actually applies to.
           if (hasCustoms) ...[
@@ -835,7 +1045,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               _sortLabel(settings.categorySortMode),
               style: TextStyle(
                 fontSize: 9,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1,
                 color: oc.accent,
               ),
@@ -875,8 +1085,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               'SORT CATEGORIES',
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
                 color: oc.text,
               ),
             ),
@@ -1005,13 +1215,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       scale: selected ? 1.04 : 1.0,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutBack,
-      child: NeoPopElevated(
-        faceColor: selected ? ExpndColors.gold : oc.surface,
-        depthColor: selected ? ExpndColors.goldDark : oc.edge,
-        borderColor: selected ? ExpndColors.goldDark : oc.border,
-        depth: 3,
-        cornerRadius: 6,
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected ? ExpndColors.gold : oc.surface,
+          borderRadius: BorderRadius.circular(ExpndRadius.button),
+          border: Border.all(
+            color: selected ? ExpndColors.goldDark : oc.border,
+            width: 1.2,
+          ),
+        ),
         child: InkWell(
+          borderRadius: BorderRadius.circular(ExpndRadius.button),
           onTap: () {
             Haptics.light();
             setState(() {
@@ -1057,15 +1271,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       scale: selected ? 1.04 : 1.0,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutBack,
-      child: NeoPopElevated(
-        faceColor: selected ? ExpndColors.gold : oc.surface,
-        depthColor: selected ? ExpndColors.goldDark : oc.edge,
-        borderColor: selected
-            ? ExpndColors.goldDark
-            : color.withValues(alpha: 0.5),
-        depth: 3,
-        cornerRadius: 6,
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected ? ExpndColors.gold : oc.surface,
+          borderRadius: BorderRadius.circular(ExpndRadius.button),
+          border: Border.all(
+            color: selected
+                ? ExpndColors.goldDark
+                : color.withValues(alpha: 0.5),
+            width: 1.2,
+          ),
+        ),
         child: InkWell(
+          borderRadius: BorderRadius.circular(ExpndRadius.button),
           onTap: () {
             Haptics.light();
             setState(() {
@@ -1108,13 +1326,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   Widget _createCategoryButton() {
     final oc = context.oc;
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: ExpndColors.gold.withValues(alpha: 0.5),
-      depth: 3,
-      cornerRadius: 6,
+    return Container(
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(ExpndRadius.button),
+        border: Border.all(
+          color: ExpndColors.gold.withValues(alpha: 0.5),
+          width: 1.2,
+        ),
+      ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(ExpndRadius.button),
         onTap: () async {
           Haptics.light();
           final result = await showModalBottomSheet<_CategorySheetResult>(
@@ -1161,60 +1383,33 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       builder: (_) => _CreateCategorySheet(defaultType: _type, editing: c),
     );
     if (result == null) return;
+    if (!mounted) return;
     // Edits land in place (same object, refreshed via the store), so we only
     // need to react when the category is deleted out from under a selection.
     if (result.deleted && _customCategory?.id == c.id) {
       setState(() => _customCategory = null);
     } else {
-      setState(() {});
+      final updated = context.read<AppStore>().customCategoryFor(c.id);
+      setState(() {
+        if (updated == null ||
+            (updated.applicableType != null &&
+                updated.applicableType != _type)) {
+          _customCategory = null;
+        }
+      });
     }
   }
 
-  Widget _amountSection(ExpndColors oc) {
-    return _sectionBlock(
-      'AMOUNT',
-      Container(
-        decoration: BoxDecoration(
-          color: oc.bg,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: oc.border, width: 1.5),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            Text(
-              _symbol,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: oc.accent,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: TextField(
-                controller: _amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                inputFormatters: amountInputFormatters,
-                onChanged: (_) => setState(() {}),
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: oc.text,
-                ),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintText: '0.00',
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _amountSection(ExpndColors oc) => _sectionBlock(
+    'Amount',
+    MoneyField(
+      controller: _amountCtrl,
+      currencyCode: context.read<SettingsStore>().currencyCode,
+      label: 'Amount',
+      prominent: true,
+      onChanged: (_) => setState(() {}),
+    ),
+  );
 
   // Live inline warning shown under the amount field when the entered expense
   // would push a budgeted category over its monthly limit. Non-blocking — the
@@ -1258,7 +1453,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                             'OVER BUDGET',
                             style: TextStyle(
                               fontSize: 9,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               letterSpacing: 1.5,
                               color: ExpndColors.red,
                             ),
@@ -1360,7 +1555,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.bold,
-              letterSpacing: 2,
+              letterSpacing: 0.3,
               color: oc.muted,
             ),
           ),
@@ -1421,7 +1616,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 '$_symbol${_amount.toStringAsFixed(2)}',
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: settled ? ExpndColors.green : oc.text,
                 ),
               ),
@@ -1519,7 +1714,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               ),
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 color: oc.text,
               ),
               decoration: InputDecoration(
@@ -1630,40 +1825,44 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'TAGS',
+            'Tags',
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.bold,
-              letterSpacing: 2,
+              letterSpacing: 0.3,
               color: oc.muted,
             ),
           ),
           const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: oc.bg,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: oc.border, width: 1.5),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: TextField(
-              controller: _tagCtrl,
-              textInputAction: TextInputAction.done,
-              onSubmitted: add,
-              style: TextStyle(fontSize: 13, color: oc.text),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: 'add a tag',
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                suffixIcon: GestureDetector(
-                  onTap: () => add(_tagCtrl.text),
-                  child: Icon(sfIcon('plus'), size: 14, color: oc.accent),
-                ),
-                suffixIconConstraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
-                ),
+          TextField(
+            controller: _tagCtrl,
+            textInputAction: TextInputAction.done,
+            onSubmitted: add,
+            style: TextStyle(fontSize: 13, color: oc.text),
+            decoration: InputDecoration(
+              hintText: 'add a tag',
+              isDense: true,
+              filled: true,
+              fillColor: oc.surface,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 14,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(ExpndRadius.button),
+                borderSide: BorderSide(color: oc.border, width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(ExpndRadius.button),
+                borderSide: BorderSide(color: oc.accent, width: 1.8),
+              ),
+              suffixIcon: GestureDetector(
+                onTap: () => add(_tagCtrl.text),
+                child: Icon(sfIcon('plus'), size: 14, color: oc.accent),
+              ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 32,
+                minHeight: 32,
               ),
             ),
           ),
@@ -1855,35 +2054,44 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'NOTE',
+                  'Note',
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: oc.bg,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: oc.border, width: 1.5),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    controller: _noteCtrl,
-                    onChanged: (_) => setState(() {}),
-                    style: TextStyle(fontSize: 13, color: oc.text),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'optional note',
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 14),
+                TextField(
+                  controller: _noteCtrl,
+                  onChanged: _onNoteChanged,
+                  style: TextStyle(fontSize: 13, color: oc.text),
+                  decoration: InputDecoration(
+                    hintText: 'optional note',
+                    isDense: true,
+                    filled: true,
+                    fillColor: oc.surface,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 14,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(
+                        Radius.circular(ExpndRadius.button),
+                      ),
+                      borderSide: BorderSide(color: oc.border, width: 1.2),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(
+                        Radius.circular(ExpndRadius.button),
+                      ),
+                      borderSide: BorderSide(color: oc.accent, width: 1.8),
                     ),
                   ),
                 ),
                 _payeeSuggestions(oc),
+                _aiCategoryChip(oc),
               ],
             ),
           ),
@@ -1893,11 +2101,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'DATE',
+                  'Date',
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -1942,7 +2150,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   Widget _recurringSection(ExpndColors oc) {
     return _sectionBlock(
-      'RECURRING',
+      'Recurring',
       Column(
         children: [
           Row(
@@ -2295,10 +2503,34 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-        child: _submitButton(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_isValid) ...[
+              Text(
+                _validationHint,
+                style: TextStyle(fontSize: 12, color: oc.muted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+            ],
+            _submitButton(),
+          ],
+        ),
       ),
     ),
   );
+
+  String get _validationHint {
+    if (_amount <= 0) return 'Enter an amount greater than zero';
+    if (_type == TransactionType.transfer) {
+      return 'Choose two different accounts for the transfer';
+    }
+    if (_splitLines.isNotEmpty) {
+      return 'Split amounts must add up to the total';
+    }
+    return 'Choose a category to save this transaction';
+  }
 
   Widget _submitButton() {
     final oc = context.oc;
@@ -2327,10 +2559,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  _isEditing ? 'SAVE CHANGES' : 'ADD TRANSACTION',
+                  _isEditing ? 'Save changes' : 'Add transaction',
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 1.5,
                     color: _isValid ? ExpndColors.ink : oc.dimmed,
                   ),
@@ -2490,8 +2722,8 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
             _isEditing ? 'EDIT CATEGORY' : 'NEW CATEGORY',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -2561,7 +2793,7 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
     style: TextStyle(
       fontSize: 9,
       fontWeight: FontWeight.bold,
-      letterSpacing: 2,
+      letterSpacing: 0.3,
       color: oc.muted,
     ),
   );
@@ -2572,7 +2804,7 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2604,7 +2836,7 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
                     _nameCtrl.text.isEmpty ? 'Category Name' : _nameCtrl.text,
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: _nameCtrl.text.isEmpty ? oc.dimmed : oc.text,
                     ),
                   ),
@@ -2765,10 +2997,10 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
               ),
               const SizedBox(width: 8),
               Text(
-                _isEditing ? 'SAVE CHANGES' : 'CREATE CATEGORY',
+                _isEditing ? 'Save changes' : 'CREATE CATEGORY',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
                   color: _isValid ? ExpndColors.ink : oc.dimmed,
                 ),
@@ -2805,7 +3037,7 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
               'DELETE CATEGORY',
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
                 color: ExpndColors.red,
               ),
@@ -2841,7 +3073,7 @@ class _CreateCategorySheetState extends State<_CreateCategorySheet> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   color: oc.text,
                 ),
               ),
@@ -2939,8 +3171,8 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
             'CONFIRM TRANSACTION',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -2963,7 +3195,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
+                          letterSpacing: 0.3,
                           color: oc.muted,
                         ),
                       ),
@@ -2976,7 +3208,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                             widget.symbol,
                             style: TextStyle(
                               fontSize: 28,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               color: oc.accent,
                             ),
                           ),
@@ -2984,7 +3216,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                             widget.amount.toStringAsFixed(2),
                             style: TextStyle(
                               fontSize: 36,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w700,
                               color: oc.text,
                             ),
                           ),
@@ -2999,7 +3231,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -3035,7 +3267,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                   style: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+                    letterSpacing: 0.3,
                     color: oc.muted,
                   ),
                 ),
@@ -3105,7 +3337,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
               label,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
                 color: selected ? ExpndColors.ink : oc.muted,
               ),
@@ -3191,7 +3423,7 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                 'USE THIS',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
                   color: valid ? ExpndColors.ink : oc.dimmed,
                 ),
@@ -3262,8 +3494,8 @@ class _ReorderCategoriesSheetState extends State<_ReorderCategoriesSheet> {
             'ARRANGE CATEGORIES',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
               color: oc.text,
             ),
           ),
@@ -3316,7 +3548,7 @@ class _ReorderCategoriesSheetState extends State<_ReorderCategoriesSheet> {
                           'SAVE ORDER',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 1.5,
                             color: ExpndColors.ink,
                           ),

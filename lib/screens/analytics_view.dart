@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/insights.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
@@ -10,6 +11,7 @@ import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
+import '../widgets/context_ai_coach.dart';
 import 'settings_view.dart';
 import '../widgets/neopop.dart';
 
@@ -73,6 +75,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
         .where((t) => t.type == TransactionType.expense)
         .fold(0.0, (s, t) => s + t.amount);
     final net = income - expenses;
+    final aiFacts = _analyticsAiFacts(filtered, income, expenses, net, code);
 
     final categoryCards = _categoryCards(oc, store, filtered, code);
 
@@ -110,18 +113,33 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                       _slot(2, _summaryRow(oc, income, expenses, net, code)),
                       _slot(
                         3,
+                        _plainLanguageSummary(
+                          oc,
+                          income,
+                          expenses,
+                          net,
+                          filtered.length,
+                          code,
+                        ),
+                      ),
+                      _slot(
+                        4,
+                        aiFacts.isEmpty ? null : ContextAiCoach(facts: aiFacts),
+                      ),
+                      _slot(
+                        5,
                         filtered.length >= 2
                             ? _balanceTrendCard(oc, filtered, code)
                             : null,
                       ),
                       _slot(
-                        4,
+                        6,
                         filtered.isNotEmpty
                             ? _monthlyBarCard(oc, filtered, code)
                             : null,
                       ),
                       _slot(
-                        5,
+                        7,
                         categoryCards.isEmpty
                             ? null
                             : Column(
@@ -144,6 +162,63 @@ class _AnalyticsViewState extends State<AnalyticsView> {
         ],
       ),
     );
+  }
+
+  List<Insight> _analyticsAiFacts(
+    List<Transaction> transactions,
+    double income,
+    double expenses,
+    double net,
+    String code,
+  ) {
+    if (transactions.isEmpty) return const [];
+    final facts = <Insight>[
+      Insight(
+        title: net >= 0
+            ? 'Cash flow is ahead by ${formatCurrency(net, code)}'
+            : 'Cash flow is behind by ${formatCurrency(net.abs(), code)}',
+        detail:
+            '${formatCurrency(income, code)} in and ${formatCurrency(expenses, code)} out for ${_period.label}',
+        tone: net >= 0 ? InsightTone.good : InsightTone.warn,
+        icon: net >= 0 ? 'arrow.up.right' : 'arrow.down.right',
+        weight: 90,
+      ),
+    ];
+
+    final byCategory = <TransactionCategory, double>{};
+    for (final transaction in transactions) {
+      if (transaction.type != TransactionType.expense) continue;
+      byCategory.update(
+        transaction.category,
+        (value) => value + transaction.amount,
+        ifAbsent: () => transaction.amount,
+      );
+    }
+    if (byCategory.isNotEmpty) {
+      final top = byCategory.entries.reduce(
+        (a, b) => a.value >= b.value ? a : b,
+      );
+      facts.add(
+        Insight(
+          title: '${top.key.raw} is the top expense',
+          detail: '${formatCurrency(top.value, code)} in the selected period',
+          tone: InsightTone.neutral,
+          icon: top.key.icon,
+          weight: 70,
+        ),
+      );
+    }
+    facts.add(
+      Insight(
+        title:
+            '${transactions.length} transaction${transactions.length == 1 ? '' : 's'} analyzed',
+        detail: 'Scoped to ${_accountFilter?.name ?? 'all accounts'}',
+        tone: InsightTone.neutral,
+        icon: 'chart.bar.fill',
+        weight: 40,
+      ),
+    );
+    return facts;
   }
 
   // One list slot whose height animates as its section appears, disappears, or
@@ -292,7 +367,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
         faceColor: oc.surface,
         depthColor: oc.edge,
         borderColor: color.withValues(alpha: 0.4),
-        depth: 3,
+        depth: 0,
         cornerRadius: 6,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
@@ -302,9 +377,9 @@ class _AnalyticsViewState extends State<AnalyticsView> {
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 8,
+                  fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 1.5,
+                  letterSpacing: 0.2,
                   color: oc.muted,
                 ),
               ),
@@ -322,7 +397,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                     formatCurrency(v, code),
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: color,
                     ),
                   ),
@@ -336,50 +411,102 @@ class _AnalyticsViewState extends State<AnalyticsView> {
 
     return Row(
       children: [
-        tile('INCOME', income, ExpndColors.green),
+        tile('Income', income, oc.positive),
         const SizedBox(width: 10),
-        tile('EXPENSES', expenses, ExpndColors.red),
+        tile('Expenses', expenses, oc.negative),
         const SizedBox(width: 10),
-        tile('NET', net, net >= 0 ? ExpndColors.green : ExpndColors.red),
+        tile('Net', net, net >= 0 ? oc.positive : oc.negative),
       ],
     );
   }
 
-  Widget _chartCard(ExpndColors oc, String title, String icon, Widget child) {
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 4,
-      cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+  Widget _plainLanguageSummary(
+    ExpndColors oc,
+    double income,
+    double expenses,
+    double net,
+    int count,
+    String code,
+  ) {
+    final headline = count == 0
+        ? 'No transactions in this period.'
+        : net >= 0
+        ? 'You finished ahead by ${formatCurrency(net, code)}.'
+        : 'You spent ${formatCurrency(net.abs(), code)} more than you earned.';
+    final detail = count == 0
+        ? 'Try a wider date range or add a transaction.'
+        : 'Based on ${count == 1 ? '1 transaction' : '$count transactions'} in the selected period.';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(ExpndRadius.card),
+        border: Border.all(color: oc.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            sfIcon(net >= 0 ? 'arrow.up.right' : 'arrow.down.right'),
+            size: 18,
+            color: net >= 0 ? oc.positive : oc.negative,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(sfIcon(icon), size: 12, color: oc.accent),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: oc.muted,
-                    ),
+                Text(
+                  headline,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: oc.text,
                   ),
                 ),
+                const SizedBox(height: 3),
+                Text(detail, style: TextStyle(fontSize: 11, color: oc.muted)),
               ],
             ),
-            const SizedBox(height: 16),
-            child,
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chartCard(ExpndColors oc, String title, String icon, Widget child) {
+    return Container(
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(ExpndRadius.card),
+        border: Border.all(color: oc.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(sfIcon(icon), size: 12, color: oc.accent),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0,
+                    color: oc.muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
       ),
     );
   }
@@ -413,7 +540,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
           : -filtered[i].amount;
       spots.add(FlSpot(i.toDouble(), running));
     }
-    final lineColor = running >= 0 ? ExpndColors.gold : ExpndColors.red;
+    final lineColor = running >= 0 ? oc.accent : oc.negative;
 
     // Axis bounds with a little headroom so the line never kisses the edges,
     // and always includes the zero line for an honest reference.
@@ -430,7 +557,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
       faceColor: oc.surface,
       depthColor: oc.edge,
       borderColor: oc.border,
-      depth: 4,
+      depth: 0,
       cornerRadius: 6,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -453,24 +580,30 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                 // title take all the room the value leaves.
                 Expanded(
                   child: Text(
-                    'NET CASH FLOW',
+                    'Net cash flow',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
+                      letterSpacing: 0.3,
                       color: oc.muted,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  formatCurrency(running, code),
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: lineColor,
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      formatCurrency(running, code),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: lineColor,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -538,8 +671,8 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                             formatCurrency(s.y, code),
                             TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: s.y < 0 ? ExpndColors.red : oc.text,
+                              fontWeight: FontWeight.w700,
+                              color: s.y < 0 ? oc.negative : oc.text,
                             ),
                           ),
                       ],
@@ -663,23 +796,23 @@ class _AnalyticsViewState extends State<AnalyticsView> {
         BarChartGroupData(
           x: i,
           barsSpace: 6,
-          barRods: [rod(inc, ExpndColors.green), rod(exp, ExpndColors.red)],
+          barRods: [rod(inc, oc.positive), rod(exp, oc.negative)],
         ),
       );
     }
 
     return _chartCard(
       oc,
-      'INCOME VS EXPENSES',
+      'Income vs expenses',
       'chart.bar.fill',
       Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              _legendDot(ExpndColors.green, 'Income', oc),
+              _legendDot(oc.positive, 'Income', oc),
               const SizedBox(width: 12),
-              _legendDot(ExpndColors.red, 'Expenses', oc),
+              _legendDot(oc.negative, 'Expenses', oc),
             ],
           ),
           const SizedBox(height: 12),
@@ -703,7 +836,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                       formatCurrency(rod.toY, code),
                       TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w700,
                         color: rod.color ?? oc.text,
                       ),
                     ),
@@ -797,12 +930,21 @@ class _AnalyticsViewState extends State<AnalyticsView> {
     final expenses = filtered.where((t) => t.type == TransactionType.expense);
     final total = expenses.fold(0.0, (s, t) => s + t.amount);
     if (total <= 0) return [];
-    final Map<TransactionCategory, double> grouped = {};
+    final Map<String, ({String name, Color color, String icon, double value})>
+    grouped = {};
     for (final t in expenses) {
-      grouped[t.category] = (grouped[t.category] ?? 0) + t.amount;
+      final custom = store.customCategoryFor(t.customCategoryId);
+      final name = custom?.name ?? t.category.raw;
+      final prior = grouped[name];
+      grouped[name] = (
+        name: name,
+        color: custom != null ? hexColor(custom.colorHex) : t.category.color,
+        icon: custom != null ? 'tag.fill' : t.category.icon,
+        value: (prior?.value ?? 0) + t.amount,
+      );
     }
     final slices = grouped.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+      ..sort((a, b) => b.value.value.compareTo(a.value.value));
 
     return [
       _chartCard(
@@ -824,8 +966,8 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                       sections: [
                         for (final s in slices.take(7))
                           PieChartSectionData(
-                            value: s.value,
-                            color: s.key.color,
+                            value: s.value.value,
+                            color: s.value.color,
                             radius: 28,
                             showTitle: false,
                           ),
@@ -839,7 +981,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                         '${slices.length}',
                         style: TextStyle(
                           fontSize: 22,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           color: oc.text,
                         ),
                       ),
@@ -870,14 +1012,14 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                             width: 10,
                             height: 10,
                             decoration: BoxDecoration(
-                              color: s.key.color,
+                              color: s.value.color,
                               borderRadius: BorderRadius.circular(3),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              s.key.raw,
+                              s.value.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -888,11 +1030,11 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                             ),
                           ),
                           Text(
-                            '${((s.value / total) * 100).toInt()}%',
+                            '${((s.value.value / total) * 100).toInt()}%',
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: s.key.color,
+                              fontWeight: FontWeight.w700,
+                              color: s.value.color,
                             ),
                           ),
                         ],
@@ -926,17 +1068,17 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                       height: 34,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: s.key.color.withValues(alpha: 0.12),
+                        color: s.value.color.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: s.key.color.withValues(alpha: 0.4),
+                          color: s.value.color.withValues(alpha: 0.4),
                           width: 1.5,
                         ),
                       ),
                       child: Icon(
-                        sfIcon(s.key.icon),
+                        sfIcon(s.value.icon),
                         size: 13,
-                        color: s.key.color,
+                        color: s.value.color,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -948,7 +1090,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  s.key.raw,
+                                  s.value.name,
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -957,11 +1099,11 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                                 ),
                               ),
                               Text(
-                                formatCurrency(s.value, code),
+                                formatCurrency(s.value.value, code),
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.w900,
-                                  color: s.key.color,
+                                  fontWeight: FontWeight.w700,
+                                  color: s.value.color,
                                 ),
                               ),
                             ],
@@ -975,9 +1117,10 @@ class _AnalyticsViewState extends State<AnalyticsView> {
                                     Container(height: 4, color: oc.border),
                                     Container(
                                       height: 4,
-                                      width: (c.maxWidth * (s.value / total))
-                                          .clamp(4.0, c.maxWidth),
-                                      color: s.key.color,
+                                      width:
+                                          (c.maxWidth * (s.value.value / total))
+                                              .clamp(4.0, c.maxWidth),
+                                      color: s.value.color,
                                     ),
                                   ],
                                 );
@@ -1021,7 +1164,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
           'No data yet',
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
             color: oc.text,
           ),
         ),

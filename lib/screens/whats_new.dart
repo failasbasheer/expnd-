@@ -173,8 +173,8 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
               'WHAT’S NEW',
               style: TextStyle(
                 fontSize: 22,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
                 color: oc.accent,
               ),
             ),
@@ -235,7 +235,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
                           _isLast ? 'GET STARTED' : 'NEXT',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 1.5,
                             color: ExpndColors.ink,
                           ),
@@ -261,58 +261,65 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
   }
 
   Widget _page_(ExpndColors oc, _Feature f) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Concentric gold rings behind the glyph, echoing the onboarding hero.
-          SizedBox(
-            width: 132,
-            height: 132,
-            child: Stack(
-              alignment: Alignment.center,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: ExpndColors.gold.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
+                // Concentric gold rings behind the glyph, echoing the onboarding hero.
+                SizedBox(
+                  width: 132,
+                  height: 132,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: ExpndColors.gold.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: ExpndColors.gold.withValues(alpha: 0.07),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Icon(sfIcon(f.icon), size: 50, color: oc.accent),
+                    ],
                   ),
                 ),
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: ExpndColors.gold.withValues(alpha: 0.07),
-                    shape: BoxShape.circle,
+                const SizedBox(height: 28),
+                Text(
+                  f.title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: oc.text,
                   ),
                 ),
-                Icon(sfIcon(f.icon), size: 50, color: oc.accent),
+                const SizedBox(height: 12),
+                Text(
+                  f.body,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.45,
+                    fontWeight: FontWeight.w500,
+                    color: oc.muted,
+                  ),
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 28),
-          Text(
-            f.title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: oc.text,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            f.body,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              height: 1.45,
-              fontWeight: FontWeight.w500,
-              color: oc.muted,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

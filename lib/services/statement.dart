@@ -73,10 +73,13 @@ StatementData buildStatementData(
 }) {
   final now = generatedAt ?? DateTime.now();
 
-  final txns = store.transactions
-      .where((t) => t.date.year == month.year && t.date.month == month.month)
-      .toList()
-    ..sort((a, b) => a.date.compareTo(b.date));
+  final txns =
+      store.transactions
+          .where(
+            (t) => t.date.year == month.year && t.date.month == month.month,
+          )
+          .toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
 
   final income = txns
       .where((t) => t.type == TransactionType.income)
@@ -91,17 +94,19 @@ StatementData buildStatementData(
     final name = custom?.name ?? t.category.raw;
     byCategory[name] = (byCategory[name] ?? 0) + t.amount;
   }
-  final categories = (byCategory.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value)))
-      .map((e) => StatementCategory(
-            e.key,
-            e.value,
-            expenses > 0 ? (e.value / expenses * 100).round() : 0,
-          ))
-      .toList();
+  final categories =
+      (byCategory.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+          .map(
+            (e) => StatementCategory(
+              e.key,
+              e.value,
+              expenses > 0 ? (e.value / expenses * 100).round() : 0,
+            ),
+          )
+          .toList();
 
   final accounts = store.accounts
-      .map((a) => StatementAccount(a.name, store.balanceFor(a)))
+      .map((a) => StatementAccount(a.name, store.netWorthFor(a)))
       .toList();
 
   final lines = txns.map((t) {
@@ -142,8 +147,13 @@ String buildMonthlyStatement(
   String? userName,
   DateTime? generatedAt,
 }) {
-  final d = buildStatementData(store, code, month,
-      userName: userName, generatedAt: generatedAt);
+  final d = buildStatementData(
+    store,
+    code,
+    month,
+    userName: userName,
+    generatedAt: generatedAt,
+  );
   final b = StringBuffer();
 
   String money(double v) => formatCurrency(v, code, maskable: false);
@@ -180,8 +190,12 @@ String buildMonthlyStatement(
     b.writeln('SPENDING BY CATEGORY');
     rule();
     for (final c in d.categories) {
-      b.writeln(_row(
-          c.name, '${money(c.amount)}  ${c.sharePct.toString().padLeft(3)}%'));
+      b.writeln(
+        _row(
+          c.name,
+          '${money(c.amount)}  ${c.sharePct.toString().padLeft(3)}%',
+        ),
+      );
     }
     b.writeln();
   }
@@ -231,8 +245,18 @@ String _row(String label, String value) {
 }
 
 const _months = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 String _monthName(int m) => _months[m - 1];

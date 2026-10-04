@@ -19,9 +19,8 @@ enum TransactionType {
   final String raw;
   const TransactionType(this.raw);
 
-  static TransactionType fromRaw(String? r) =>
-      TransactionType.values.firstWhere((e) => e.raw == r,
-          orElse: () => TransactionType.expense);
+  static TransactionType fromRaw(String? r) => TransactionType.values
+      .firstWhere((e) => e.raw == r, orElse: () => TransactionType.expense);
 }
 
 enum RecurrenceRule {
@@ -34,9 +33,10 @@ enum RecurrenceRule {
   final String raw;
   const RecurrenceRule(this.raw);
 
-  static RecurrenceRule fromRaw(String? r) =>
-      RecurrenceRule.values.firstWhere((e) => e.raw == r,
-          orElse: () => RecurrenceRule.monthly);
+  static RecurrenceRule fromRaw(String? r) => RecurrenceRule.values.firstWhere(
+    (e) => e.raw == r,
+    orElse: () => RecurrenceRule.monthly,
+  );
 
   String get icon {
     switch (this) {
@@ -54,20 +54,51 @@ enum RecurrenceRule {
   }
 
   DateTime nextDate(DateTime date) {
+    DateTime addMonthsClamped(int months) {
+      final total = date.year * 12 + date.month - 1 + months;
+      final year = total ~/ 12;
+      final month = total % 12 + 1;
+      final lastDay = DateTime(year, month + 1, 0).day;
+      return DateTime(
+        year,
+        month,
+        date.day.clamp(1, lastDay),
+        date.hour,
+        date.minute,
+        date.second,
+        date.millisecond,
+        date.microsecond,
+      );
+    }
+
     switch (this) {
       case RecurrenceRule.daily:
-        return DateTime(date.year, date.month, date.day + 1, date.hour,
-            date.minute, date.second);
+        return DateTime(
+          date.year,
+          date.month,
+          date.day + 1,
+          date.hour,
+          date.minute,
+          date.second,
+        );
       case RecurrenceRule.weekly:
         return date.add(const Duration(days: 7));
       case RecurrenceRule.biweekly:
         return date.add(const Duration(days: 14));
       case RecurrenceRule.monthly:
-        return DateTime(date.year, date.month + 1, date.day, date.hour,
-            date.minute, date.second);
+        return addMonthsClamped(1);
       case RecurrenceRule.yearly:
-        return DateTime(date.year + 1, date.month, date.day, date.hour,
-            date.minute, date.second);
+        final lastDay = DateTime(date.year + 1, date.month + 1, 0).day;
+        return DateTime(
+          date.year + 1,
+          date.month,
+          date.day.clamp(1, lastDay),
+          date.hour,
+          date.minute,
+          date.second,
+          date.millisecond,
+          date.microsecond,
+        );
     }
   }
 }
@@ -94,9 +125,8 @@ enum TransactionCategory {
   final String raw;
   const TransactionCategory(this.raw);
 
-  static TransactionCategory fromRaw(String? r) =>
-      TransactionCategory.values.firstWhere((e) => e.raw == r,
-          orElse: () => TransactionCategory.other);
+  static TransactionCategory fromRaw(String? r) => TransactionCategory.values
+      .firstWhere((e) => e.raw == r, orElse: () => TransactionCategory.other);
 
   String get icon {
     switch (this) {
@@ -182,9 +212,19 @@ enum TransactionCategory {
         return [salary, freelance, investment, rental, gift, other];
       case TransactionType.expense:
         return [
-          groceries, food, shopping, entertainment, transport,
-          utilities, rent, subscription, insurance, medical, education,
-          gift, other
+          groceries,
+          food,
+          shopping,
+          entertainment,
+          transport,
+          utilities,
+          rent,
+          subscription,
+          insurance,
+          medical,
+          education,
+          gift,
+          other,
         ];
       case TransactionType.transfer:
         return [];
@@ -202,9 +242,10 @@ enum AccountType {
   final String raw;
   const AccountType(this.raw);
 
-  static AccountType fromRaw(String? r) =>
-      AccountType.values.firstWhere((e) => e.raw == r,
-          orElse: () => AccountType.bank);
+  static AccountType fromRaw(String? r) => AccountType.values.firstWhere(
+    (e) => e.raw == r,
+    orElse: () => AccountType.bank,
+  );
 
   String get icon {
     switch (this) {
@@ -268,34 +309,35 @@ class Account {
     DateTime? createdAt,
     this.creditLimit,
     this.cardDigits,
-  })  : id = id ?? newId(),
-        colorHex = colorHex ?? type.defaultColorHex,
-        createdAt = createdAt ?? DateTime.now();
+  }) : id = id ?? newId(),
+       colorHex = colorHex ?? type.defaultColorHex,
+       createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'type': type.raw,
-        'currencyCode': currencyCode,
-        'balance': balance,
-        'colorHex': colorHex,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'creditLimit': creditLimit,
-        'cardDigits': cardDigits,
-      };
+    'id': id,
+    'name': name,
+    'type': type.raw,
+    'currencyCode': currencyCode,
+    'balance': balance,
+    'colorHex': colorHex,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'creditLimit': creditLimit,
+    'cardDigits': cardDigits,
+  };
 
   factory Account.fromJson(Map j) => Account(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        type: AccountType.fromRaw(j['type'] as String?),
-        currencyCode: j['currencyCode'] as String,
-        balance: (j['balance'] as num).toDouble(),
-        colorHex: j['colorHex'] as String?,
-        createdAt:
-            DateTime.fromMillisecondsSinceEpoch((j['createdAt'] as num).toInt()),
-        creditLimit: (j['creditLimit'] as num?)?.toDouble(),
-        cardDigits: j['cardDigits'] as String?,
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    type: AccountType.fromRaw(j['type'] as String?),
+    currencyCode: j['currencyCode'] as String,
+    balance: (j['balance'] as num).toDouble(),
+    colorHex: j['colorHex'] as String?,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(
+      (j['createdAt'] as num).toInt(),
+    ),
+    creditLimit: (j['creditLimit'] as num?)?.toDouble(),
+    cardDigits: j['cardDigits'] as String?,
+  );
 }
 
 /// Max digits the user may type of a card number. The remaining
@@ -309,7 +351,9 @@ const int _maskedCardTail = 6;
 /// fully masked number.
 String maskedCardNumber(String? digits) {
   final d = (digits ?? '').replaceAll(RegExp(r'\D'), '');
-  final typed = d.length > kCardTypedDigits ? d.substring(0, kCardTypedDigits) : d;
+  final typed = d.length > kCardTypedDigits
+      ? d.substring(0, kCardTypedDigits)
+      : d;
   final buf = StringBuffer();
   for (var i = 0; i < 16; i++) {
     final revealed = i < typed.length && i < (16 - _maskedCardTail);
@@ -342,20 +386,20 @@ class CustomCategory {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'emoji': emoji,
-        'typeRaw': typeRaw,
-        'colorHex': colorHex,
-      };
+    'id': id,
+    'name': name,
+    'emoji': emoji,
+    'typeRaw': typeRaw,
+    'colorHex': colorHex,
+  };
 
   factory CustomCategory.fromJson(Map j) => CustomCategory(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        emoji: j['emoji'] as String,
-        typeRaw: j['typeRaw'] as String,
-        colorHex: j['colorHex'] as String,
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    emoji: j['emoji'] as String,
+    typeRaw: j['typeRaw'] as String,
+    colorHex: j['colorHex'] as String,
+  );
 }
 
 class CategoryBudget {
@@ -367,14 +411,17 @@ class CategoryBudget {
     String? id,
     required TransactionCategory category,
     required this.limit,
-  })  : id = id ?? newId(),
-        categoryRaw = category.raw;
+  }) : id = id ?? newId(),
+       categoryRaw = category.raw;
 
   TransactionCategory? get category =>
       TransactionCategory.values.where((e) => e.raw == categoryRaw).firstOrNull;
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'categoryRaw': categoryRaw, 'limit': limit};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'categoryRaw': categoryRaw,
+    'limit': limit,
+  };
 
   factory CategoryBudget.fromJson(Map j) {
     final c = CategoryBudget(
@@ -423,39 +470,40 @@ class SavingsGoal {
     this.colorHex = 'F7C948',
     this.accountId,
     DateTime? createdDate,
-  })  : id = id ?? newId(),
-        createdDate = createdDate ?? DateTime.now();
+  }) : id = id ?? newId(),
+       createdDate = createdDate ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'targetAmount': targetAmount,
-        'allocatedAmount': allocatedAmount,
-        'iconName': iconName,
-        'colorHex': colorHex,
-        'accountId': accountId,
-        'createdDate': createdDate.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'name': name,
+    'targetAmount': targetAmount,
+    'allocatedAmount': allocatedAmount,
+    'iconName': iconName,
+    'colorHex': colorHex,
+    'accountId': accountId,
+    'createdDate': createdDate.millisecondsSinceEpoch,
+  };
 
   factory SavingsGoal.fromJson(Map j) => SavingsGoal(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        targetAmount: (j['targetAmount'] as num).toDouble(),
-        // 1.0.0 stored a hand-maintained 'currentAmount'; a build in between
-        // called it 'openingAmount'. Both meant "money set aside for this",
-        // which is what an allocation is — carry either over so nobody opens
-        // the app to a goal reset to zero.
-        allocatedAmount: ((j['allocatedAmount'] ??
-                    j['openingAmount'] ??
-                    j['currentAmount']) as num?)
-                ?.toDouble() ??
-            0,
-        iconName: j['iconName'] as String? ?? 'star.fill',
-        colorHex: j['colorHex'] as String? ?? 'F7C948',
-        accountId: j['accountId'] as String?,
-        createdDate: DateTime.fromMillisecondsSinceEpoch(
-            (j['createdDate'] as num).toInt()),
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    targetAmount: (j['targetAmount'] as num).toDouble(),
+    // 1.0.0 stored a hand-maintained 'currentAmount'; a build in between
+    // called it 'openingAmount'. Both meant "money set aside for this",
+    // which is what an allocation is — carry either over so nobody opens
+    // the app to a goal reset to zero.
+    allocatedAmount:
+        ((j['allocatedAmount'] ?? j['openingAmount'] ?? j['currentAmount'])
+                as num?)
+            ?.toDouble() ??
+        0,
+    iconName: j['iconName'] as String? ?? 'star.fill',
+    colorHex: j['colorHex'] as String? ?? 'F7C948',
+    accountId: j['accountId'] as String?,
+    createdDate: DateTime.fromMillisecondsSinceEpoch(
+      (j['createdDate'] as num).toInt(),
+    ),
+  );
 }
 
 class Transaction {
@@ -510,35 +558,39 @@ class Transaction {
     this.splitGroupId,
     this.debtId,
     this.emiId,
-  })  : id = id ?? newId(),
-        tags = tags ?? [],
-        date = date ?? DateTime.now(),
-        recurrenceRuleRaw = recurrenceRule.raw,
-        nextDueDate = nextDueDate ??
-            (isRecurring ? recurrenceRule.nextDate(date ?? DateTime.now()) : null);
+  }) : id = id ?? newId(),
+       tags = tags ?? [],
+       date = date ?? DateTime.now(),
+       recurrenceRuleRaw = recurrenceRule.raw,
+       nextDueDate =
+           nextDueDate ??
+           (isRecurring
+               ? recurrenceRule.nextDate(date ?? DateTime.now())
+               : null);
 
-  RecurrenceRule get recurrenceRule => RecurrenceRule.fromRaw(recurrenceRuleRaw);
+  RecurrenceRule get recurrenceRule =>
+      RecurrenceRule.fromRaw(recurrenceRuleRaw);
   set recurrenceRule(RecurrenceRule r) => recurrenceRuleRaw = r.raw;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'note': note,
-        'amount': amount,
-        'category': category.raw,
-        'type': type.raw,
-        'date': date.millisecondsSinceEpoch,
-        'isRecurring': isRecurring,
-        'recurrenceRuleRaw': recurrenceRuleRaw,
-        'nextDueDate': nextDueDate?.millisecondsSinceEpoch,
-        'photoPath': photoPath,
-        'customCategoryId': customCategoryId,
-        'accountId': accountId,
-        'toAccountId': toAccountId,
-        'tags': tags,
-        'splitGroupId': splitGroupId,
-        'debtId': debtId,
-        'emiId': emiId,
-      };
+    'id': id,
+    'note': note,
+    'amount': amount,
+    'category': category.raw,
+    'type': type.raw,
+    'date': date.millisecondsSinceEpoch,
+    'isRecurring': isRecurring,
+    'recurrenceRuleRaw': recurrenceRuleRaw,
+    'nextDueDate': nextDueDate?.millisecondsSinceEpoch,
+    'photoPath': photoPath,
+    'customCategoryId': customCategoryId,
+    'accountId': accountId,
+    'toAccountId': toAccountId,
+    'tags': tags,
+    'splitGroupId': splitGroupId,
+    'debtId': debtId,
+    'emiId': emiId,
+  };
 
   factory Transaction.fromJson(Map j) {
     final t = Transaction(
@@ -565,8 +617,9 @@ class Transaction {
     t.recurrenceRuleRaw =
         j['recurrenceRuleRaw'] as String? ?? RecurrenceRule.monthly.raw;
     final nd = j['nextDueDate'];
-    t.nextDueDate =
-        nd == null ? null : DateTime.fromMillisecondsSinceEpoch((nd as num).toInt());
+    t.nextDueDate = nd == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch((nd as num).toInt());
     return t;
   }
 }
@@ -592,8 +645,8 @@ class Emi {
     required this.annualRate,
     required this.tenureMonths,
     DateTime? startDate,
-  })  : id = id ?? newId(),
-        startDate = startDate ?? DateTime.now();
+  }) : id = id ?? newId(),
+       startDate = startDate ?? DateTime.now();
 
   double get _monthlyRate => annualRate / 12 / 100;
 
@@ -638,25 +691,26 @@ class Emi {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'accountId': accountId,
-        'name': name,
-        'principal': principal,
-        'annualRate': annualRate,
-        'tenureMonths': tenureMonths,
-        'startDate': startDate.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'accountId': accountId,
+    'name': name,
+    'principal': principal,
+    'annualRate': annualRate,
+    'tenureMonths': tenureMonths,
+    'startDate': startDate.millisecondsSinceEpoch,
+  };
 
   factory Emi.fromJson(Map j) => Emi(
-        id: j['id'] as String,
-        accountId: j['accountId'] as String,
-        name: j['name'] as String? ?? '',
-        principal: (j['principal'] as num).toDouble(),
-        annualRate: (j['annualRate'] as num).toDouble(),
-        tenureMonths: (j['tenureMonths'] as num).toInt(),
-        startDate:
-            DateTime.fromMillisecondsSinceEpoch((j['startDate'] as num).toInt()),
-      );
+    id: j['id'] as String,
+    accountId: j['accountId'] as String,
+    name: j['name'] as String? ?? '',
+    principal: (j['principal'] as num).toDouble(),
+    annualRate: (j['annualRate'] as num).toDouble(),
+    tenureMonths: (j['tenureMonths'] as num).toInt(),
+    startDate: DateTime.fromMillisecondsSinceEpoch(
+      (j['startDate'] as num).toInt(),
+    ),
+  );
 }
 
 /// Money lent to someone, or borrowed from them — the "Rahul owes me ₹500"
@@ -691,6 +745,10 @@ class Debt {
   /// a way that never touched a tracked account).
   DateTime? settledDate;
 
+  /// Automatically closed when repayments reach the original amount. Kept
+  /// separate from [settledDate] so edits/deletions can reopen the debt.
+  bool autoSettled;
+
   /// An agreed repayment per month, when there is one — "Rahul pays me back
   /// ₹200 a month". Null means the debt has no schedule and simply sits open
   /// until someone settles it. A plan is what lets a debt appear in Upcoming
@@ -707,29 +765,33 @@ class Debt {
     this.note = '',
     this.accountId,
     this.settledDate,
+    this.autoSettled = false,
     this.monthlyRepayment,
-  })  : id = id ?? newId(),
-        date = date ?? DateTime.now();
+  }) : id = id ?? newId(),
+       date = date ?? DateTime.now();
 
-  bool get isSettled => settledDate != null;
+  bool get isSettled => settledDate != null || autoSettled;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'person': person,
-        'amount': amount,
-        'theyOweMe': theyOweMe,
-        'date': date.millisecondsSinceEpoch,
-        'dueDate': dueDate?.millisecondsSinceEpoch,
-        'note': note,
-        'accountId': accountId,
-        'settledDate': settledDate?.millisecondsSinceEpoch,
-        'monthlyRepayment': monthlyRepayment,
-      };
+    'id': id,
+    'person': person,
+    'amount': amount,
+    'theyOweMe': theyOweMe,
+    'date': date.millisecondsSinceEpoch,
+    'dueDate': dueDate?.millisecondsSinceEpoch,
+    'note': note,
+    'accountId': accountId,
+    'settledDate': settledDate?.millisecondsSinceEpoch,
+    'autoSettled': autoSettled,
+    'monthlyRepayment': monthlyRepayment,
+  };
 
   factory Debt.fromJson(Map j) {
     DateTime? at(String key) {
       final v = j[key];
-      return v == null ? null : DateTime.fromMillisecondsSinceEpoch((v as num).toInt());
+      return v == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch((v as num).toInt());
     }
 
     return Debt(
@@ -742,10 +804,97 @@ class Debt {
       note: j['note'] as String? ?? '',
       accountId: j['accountId'] as String?,
       settledDate: at('settledDate'),
+      autoSettled: j['autoSettled'] as bool? ?? false,
       // Absent in data written before debts could carry a schedule.
       monthlyRepayment: (j['monthlyRepayment'] as num?)?.toDouble(),
     );
   }
+}
+
+/// An amount logged from outside the app — a home-screen widget button, the
+/// Lock Screen, or Siri — that hasn't been filed into the ledger yet.
+///
+/// Capture happens in the widget extension's process, which can't reach Hive,
+/// so the native side only ever records what it actually knows: an amount, a
+/// timestamp, and whatever note Siri heard. Everything a real [Transaction]
+/// needs — account, category, type — is missing by construction, and guessing
+/// it would quietly corrupt budgets and balances. So a capture waits here
+/// until the user assigns it, and only then becomes a transaction. Nothing in
+/// this class participates in balances; it is deliberately inert until filed.
+class PendingCapture {
+  /// The id minted by the native side when the capture was queued. Reusing it
+  /// (rather than a fresh [newId]) makes draining idempotent: a drain that is
+  /// interrupted after adding but before acknowledging can't duplicate rows.
+  final String id;
+
+  double amount;
+
+  /// What Siri heard, when the capture came with words. Widget buttons have no
+  /// text to offer, so this is usually empty.
+  String note;
+
+  DateTime capturedAt;
+
+  /// Where it came from — `widget`, `siri`, `shortcut`, or `backtap`. Display
+  /// only; the review flow treats every source identically.
+  String source;
+
+  /// A category the user picked while capturing, carried through so filing
+  /// starts from it instead of asking twice. Both stay null for captures taken
+  /// somewhere with no room to choose one — a widget button, Siri.
+  ///
+  /// At most one is set, mirroring how [Transaction] stores the same choice:
+  /// [customCategoryId] wins when present, else [categoryRaw] names a
+  /// [TransactionCategory].
+  String? categoryRaw;
+  String? customCategoryId;
+
+  PendingCapture({
+    required this.id,
+    required this.amount,
+    this.note = '',
+    DateTime? capturedAt,
+    this.source = 'widget',
+    this.categoryRaw,
+    this.customCategoryId,
+  }) : capturedAt = capturedAt ?? DateTime.now();
+
+  /// The built-in category the user chose, or null when they chose a custom one
+  /// (or none). Deliberately not falling back to [TransactionCategory.other]
+  /// the way [TransactionCategory.fromRaw] does — "didn't pick" has to stay
+  /// distinguishable from "picked Other" so filing knows whether to prompt.
+  TransactionCategory? get category {
+    final raw = categoryRaw;
+    if (raw == null) return null;
+    for (final c in TransactionCategory.values) {
+      if (c.raw == raw) return c;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'amount': amount,
+    'note': note,
+    'capturedAt': capturedAt.millisecondsSinceEpoch,
+    'source': source,
+    'categoryRaw': categoryRaw,
+    'customCategoryId': customCategoryId,
+  };
+
+  factory PendingCapture.fromJson(Map j) => PendingCapture(
+    id: j['id'] as String,
+    amount: (j['amount'] as num).toDouble(),
+    note: j['note'] as String? ?? '',
+    capturedAt: j['capturedAt'] == null
+        ? DateTime.now()
+        : DateTime.fromMillisecondsSinceEpoch((j['capturedAt'] as num).toInt()),
+    source: j['source'] as String? ?? 'widget',
+    // Absent on anything queued by the native side, and on captures saved
+    // before categories could be picked at capture time.
+    categoryRaw: j['categoryRaw'] as String?,
+    customCategoryId: j['customCategoryId'] as String?,
+  );
 }
 
 extension _FirstOrNull<E> on Iterable<E> {

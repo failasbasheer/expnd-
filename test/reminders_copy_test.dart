@@ -31,31 +31,51 @@ void main() {
 
   group('buildReminderBodies — message modes', () {
     test('custom mode repeats the user\'s line every night', () {
-      final bodies = buildReminderBodies(store(), 'USD',
-          from: now, mode: 'custom', customMessage: 'Did you log lunch?');
+      final bodies = buildReminderBodies(
+        store(),
+        'USD',
+        from: now,
+        mode: 'custom',
+        customMessage: 'Did you log lunch?',
+      );
       expect(bodies, hasLength(7));
       expect(bodies.every((b) => b == 'Did you log lunch?'), isTrue);
     });
 
     test('custom mode with a blank line falls back to auto', () {
-      final bodies = buildReminderBodies(store(), 'USD',
-          from: now, mode: 'custom', customMessage: '   ');
+      final bodies = buildReminderBodies(
+        store(),
+        'USD',
+        from: now,
+        mode: 'custom',
+        customMessage: '   ',
+      );
       // A fresh store has no trends, so auto is all filler — the point is only
       // that it is NOT seven copies of an empty string.
       expect(bodies.every((b) => b.trim().isEmpty), isFalse);
     });
 
     test('mixed mode drops the custom line into every other slot', () {
-      final bodies = buildReminderBodies(store(), 'USD',
-          from: now, mode: 'mixed', customMessage: 'My own nudge');
+      final bodies = buildReminderBodies(
+        store(),
+        'USD',
+        from: now,
+        mode: 'mixed',
+        customMessage: 'My own nudge',
+      );
       expect(bodies[1], 'My own nudge');
       expect(bodies[3], 'My own nudge');
       expect(bodies[0], isNot('My own nudge'));
     });
 
     test('auto mode is unaffected by an unused custom line', () {
-      final withLine = buildReminderBodies(store(), 'USD',
-          from: now, mode: 'auto', customMessage: 'ignored');
+      final withLine = buildReminderBodies(
+        store(),
+        'USD',
+        from: now,
+        mode: 'auto',
+        customMessage: 'ignored',
+      );
       final without = buildReminderBodies(store(), 'USD', from: now);
       expect(withLine, without);
     });
@@ -69,16 +89,23 @@ void main() {
     });
 
     test('title changes with tone', () {
-      expect(reminderVoice(ReminderTone.neutral).title, 'Log today\'s spending');
+      expect(
+        reminderVoice(ReminderTone.neutral).title,
+        'Log today\'s spending',
+      );
       expect(reminderVoice(ReminderTone.blunt).title, 'Log it.');
     });
 
     test('a real name is greeted, the placeholder is not', () {
-      expect(reminderVoice(ReminderTone.blunt, name: 'Travis Smith').title,
-          'Travis — log it.');
+      expect(
+        reminderVoice(ReminderTone.blunt, name: 'Travis Smith').title,
+        'Travis — log it.',
+      );
       // First name only, and the setup placeholder is treated as "no name".
-      expect(reminderVoice(ReminderTone.neutral, name: 'Your Name').title,
-          'Log today\'s spending');
+      expect(
+        reminderVoice(ReminderTone.neutral, name: 'Your Name').title,
+        'Log today\'s spending',
+      );
     });
 
     test('filler pool differs by tone', () {
@@ -90,12 +117,20 @@ void main() {
     });
 
     test('a chosen tone shapes the filler the bodies fall back to', () {
-      final bodies = buildReminderBodies(store(), 'USD',
-          from: now, tone: ReminderTone.playful);
+      final bodies = buildReminderBodies(
+        store(),
+        'USD',
+        from: now,
+        tone: ReminderTone.playful,
+      );
       // A fresh store has nothing to report, so at least one line is playful
       // filler rather than the neutral default.
-      expect(bodies.any((b) => reminderVoice(ReminderTone.playful).filler.contains(b)),
-          isTrue);
+      expect(
+        bodies.any(
+          (b) => reminderVoice(ReminderTone.playful).filler.contains(b),
+        ),
+        isTrue,
+      );
     });
   });
 

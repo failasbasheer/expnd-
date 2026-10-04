@@ -55,15 +55,19 @@ void main() {
     test('warns the night before an outflow, tagged to its account', () {
       final s = store();
       final acc = Account(
-          name: 'Checking',
-          type: AccountType.bank,
-          currencyCode: 'USD',
-          balance: 0);
+        name: 'Checking',
+        type: AccountType.bank,
+        currencyCode: 'USD',
+        balance: 0,
+      );
       s.addAccount(acc);
-      s.addTransaction(recurring(
+      s.addTransaction(
+        recurring(
           amount: 1200,
           due: now.add(const Duration(days: 3)),
-          accountId: acc.id));
+          accountId: acc.id,
+        ),
+      );
 
       final alerts = dueSoonAlerts(s, 'USD', from: now, hour: 21, minute: 0);
 
@@ -77,12 +81,14 @@ void main() {
 
     test('ignores inflows — "money is coming" needs no action', () {
       final s = store();
-      s.addTransaction(recurring(
-        amount: 3000,
-        due: now.add(const Duration(days: 2)),
-        type: TransactionType.income,
-        note: 'Salary',
-      ));
+      s.addTransaction(
+        recurring(
+          amount: 3000,
+          due: now.add(const Duration(days: 2)),
+          type: TransactionType.income,
+          note: 'Salary',
+        ),
+      );
       expect(dueSoonAlerts(s, 'USD', from: now), isEmpty);
     });
 
@@ -97,22 +103,29 @@ void main() {
   });
 
   group('over budget', () {
-    void spend(AppStore s, double amount) => s.addTransaction(Transaction(
-          amount: amount,
-          category: TransactionCategory.food,
-          type: TransactionType.expense,
-          date: now,
-        ));
+    void spend(AppStore s, double amount) => s.addTransaction(
+      Transaction(
+        amount: amount,
+        category: TransactionCategory.food,
+        type: TransactionType.expense,
+        date: now,
+      ),
+    );
 
     test('newly over when the month passes the budget and unannounced', () {
       final s = store();
       spend(s, 500);
       expect(
-          newlyOverBudget(s,
-              monthlyBudget: 300, lastAlertedMonth: 0, from: now),
-          isTrue);
-      final alert = overBudgetAlert(s, 'USD',
-          monthlyBudget: 300, lastAlertedMonth: 0, from: now);
+        newlyOverBudget(s, monthlyBudget: 300, lastAlertedMonth: 0, from: now),
+        isTrue,
+      );
+      final alert = overBudgetAlert(
+        s,
+        'USD',
+        monthlyBudget: 300,
+        lastAlertedMonth: 0,
+        from: now,
+      );
       expect(alert, isNotNull);
       expect(alert!.title, 'Over budget');
     });
@@ -121,32 +134,48 @@ void main() {
       final s = store();
       spend(s, 500);
       expect(
-          newlyOverBudget(s,
-              monthlyBudget: 300,
-              lastAlertedMonth: yyyymm(now),
-              from: now),
-          isFalse);
+        newlyOverBudget(
+          s,
+          monthlyBudget: 300,
+          lastAlertedMonth: yyyymm(now),
+          from: now,
+        ),
+        isFalse,
+      );
       expect(
-          overBudgetAlert(s, 'USD',
-              monthlyBudget: 300, lastAlertedMonth: yyyymm(now), from: now),
-          isNull);
+        overBudgetAlert(
+          s,
+          'USD',
+          monthlyBudget: 300,
+          lastAlertedMonth: yyyymm(now),
+          from: now,
+        ),
+        isNull,
+      );
     });
 
     test('no budget set means nothing to be over', () {
       final s = store();
       spend(s, 9999);
       expect(
-          newlyOverBudget(s,
-              monthlyBudget: 0, lastAlertedMonth: 0, from: now),
-          isFalse);
+        newlyOverBudget(s, monthlyBudget: 0, lastAlertedMonth: 0, from: now),
+        isFalse,
+      );
     });
   });
 
   group('goal reached', () {
-    SavingsGoal fund(AppStore s, double target, double allocated,
-        {String name = 'New phone'}) {
+    SavingsGoal fund(
+      AppStore s,
+      double target,
+      double allocated, {
+      String name = 'New phone',
+    }) {
       final g = SavingsGoal(
-          name: name, targetAmount: target, allocatedAmount: allocated);
+        name: name,
+        targetAmount: target,
+        allocatedAmount: allocated,
+      );
       s.addGoal(g);
       return g;
     }

@@ -88,12 +88,16 @@ class Reminders {
   static Future<bool> requestPermission() async {
     await init();
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final ios = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
       return await ios?.requestPermissions(alert: true, sound: true) ?? false;
     }
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     return await android?.requestNotificationsPermission() ?? false;
   }
 
@@ -136,13 +140,15 @@ class Reminders {
 
     // ── Bills due soon ────────────────────────────────────────────────────────
     if (settings.alertBillsDue) {
-      await scheduleBillAlerts(dueSoonAlerts(
-        store,
-        code,
-        hour: t.hour,
-        minute: t.minute,
-        cap: billMaxCount,
-      ));
+      await scheduleBillAlerts(
+        dueSoonAlerts(
+          store,
+          code,
+          hour: t.hour,
+          minute: t.minute,
+          cap: billMaxCount,
+        ),
+      );
     } else {
       await _cancelRange(_billBaseId, billMaxCount);
     }
@@ -154,8 +160,11 @@ class Reminders {
         t.hour,
         t.minute,
         title: 'Your week in money',
-        body: buildWeeklySummaryBody(store, code,
-            monthlyBudget: settings.monthlyBudget),
+        body: buildWeeklySummaryBody(
+          store,
+          code,
+          monthlyBudget: settings.monthlyBudget,
+        ),
       );
     } else {
       await _cancelRange(_weeklyBaseId, weeklyQueueWeeks);
@@ -275,7 +284,12 @@ class Reminders {
         id: _weeklyBaseId + w,
         title: title,
         body: body,
-        scheduledDate: _nextInstanceOfWeekday(weekday, hour, minute, addWeeks: w),
+        scheduledDate: _nextInstanceOfWeekday(
+          weekday,
+          hour,
+          minute,
+          addWeeks: w,
+        ),
         notificationDetails: _scheduledDetails(
           'weekly_summary',
           'Weekly summary',
@@ -329,17 +343,16 @@ class Reminders {
     String channelId,
     String channelName,
     String channelDescription,
-  ) =>
-      NotificationDetails(
-        iOS: const DarwinNotificationDetails(),
-        android: AndroidNotificationDetails(
-          channelId,
-          channelName,
-          channelDescription: channelDescription,
-          importance: Importance.defaultImportance,
-          priority: Priority.defaultPriority,
-        ),
-      );
+  ) => NotificationDetails(
+    iOS: const DarwinNotificationDetails(),
+    android: AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDescription,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    ),
+  );
 
   static Future<void> _cancelRange(int baseId, int count) async {
     for (var i = 0; i < count; i++) {
@@ -349,19 +362,32 @@ class Reminders {
 
   /// Today at [hour]:[minute] if that's still ahead, otherwise tomorrow —
   /// then [addDays] further out, for queueing a run of nights.
-  static tz.TZDateTime _nextInstanceOf(int hour, int minute,
-      {int addDays = 0}) {
+  static tz.TZDateTime _nextInstanceOf(
+    int hour,
+    int minute, {
+    int addDays = 0,
+  }) {
     final now = tz.TZDateTime.now(tz.local);
-    var next =
-        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+    var next = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
     if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
     return next.add(Duration(days: addDays));
   }
 
   /// The next [weekday] (1 = Mon … 7 = Sun) at [hour]:[minute], then [addWeeks]
   /// further out. Fires today when today is that weekday and the time's ahead.
-  static tz.TZDateTime _nextInstanceOfWeekday(int weekday, int hour, int minute,
-      {int addWeeks = 0}) {
+  static tz.TZDateTime _nextInstanceOfWeekday(
+    int weekday,
+    int hour,
+    int minute, {
+    int addWeeks = 0,
+  }) {
     var next = _nextInstanceOf(hour, minute);
     while (next.weekday != weekday) {
       next = next.add(const Duration(days: 1));
