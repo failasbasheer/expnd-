@@ -119,6 +119,25 @@ text recognition on Android (`MainActivity.kt`), so no model download or network
 access is needed. Receipt photos are stored by file name under the app's
 Documents folder (`lib/services/receipts.dart`) so they survive container moves.
 
+## Personal Android build (optional cloud AI Coach)
+
+Store builds are offline: no API key and no `INTERNET` permission. For
+side-loading to a trusted Android phone that lacks Apple Intelligence,
+`tool/build_personal_apk.sh` builds an arm64 APK whose AI Coach uses Claude
+Haiku 5.5 (`lib/services/cloud_coach.dart`). Only the app's own insight lines
+(or a single note, for category suggestions) are sent; any number the model
+invents is rejected and the built-in wording is shown instead.
+
+- The key comes from `$EXPND_CLAUDE_KEY`, the macOS Keychain item
+  `expnd-gf-claude`, or a hidden prompt. It is compiled into the APK, so use a
+  key scoped to a dedicated Anthropic workspace with tight limits and
+  prepaid credit, and never publish the APK.
+- `EXPND_PERSONAL_BUILD=1` layers `android/app/src/personal/AndroidManifest.xml`
+  (grants `INTERNET`) onto the release build; nothing else changes.
+- The app also caps requests at 40 a day per phone.
+- Updates: send a newer APK and tap Update. Data is kept because every build is
+  signed with the same upload key; bump the build number in `pubspec.yaml`.
+
 ## Brand assets
 
 The app icon, adaptive/monochrome Android layers, iOS dark/tinted icons, splash and

@@ -2,6 +2,7 @@ package com.failas.expnd
 
 import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -31,9 +32,7 @@ class MainActivity : FlutterFragmentActivity() {
                     val image = InputImage.fromFilePath(this, Uri.fromFile(File(path)))
                     recognizer.process(image)
                         .addOnSuccessListener { text ->
-                            result.success(mapOf("lines" to text.textBlocks.flatMap { block ->
-                                block.lines.map { line -> line.text }
-                            }))
+                            result.success(mapOf("lines" to receiptRows(text)))
                             recognizer.close()
                         }
                         .addOnFailureListener {
@@ -45,5 +44,32 @@ class MainActivity : FlutterFragmentActivity() {
                     result.error("invalid_image", "The receipt photo could not be opened.", null)
                 }
             }
+    }
+
+    // ML Kit groups text into column blocks, so a receipt's "TOTAL" label and
+    // its amount arrive in different blocks, far apart. Rebuild visual rows
+    // (top-to-bottom, then left-to-right) so the Dart parser sees
+    // "TOTAL 23.45" on one line, matching what Vision returns on iOS.
+    private fun receiptRows(text: Text): List<String> {
+        val lines = text.textBlocks.flatMap { it.lines }
+        val boxed = lines.filter { it.boundingBox != null }
+            .sortedBy { it.boundingBox!!.exactCenterY() }
+        val rows = mutableListOf<MutableList<Text.Line>>()
+        for (line in boxed) {
+            val box = line.boundingBox!!
+            val row = rows.lastOrNull()
+            val anchor = row?.first()?.boundingBox
+            if (anchor != null &&
+                Math.abs(box.exactCenterY() - anchor.exactCenterY()) <
+                minOf(box.height(), anchor.height()) / 2f
+            ) {
+                row!!.add(line)
+            } else {
+                rows.add(mutableListOf(line))
+            }
+        }
+        return rows.map { row ->
+            row.sortedBy { it.boundingBox!!.left }.joinToString("  ") { it.text }
+        } + lines.filter { it.boundingBox == null }.map { it.text }
     }
 }

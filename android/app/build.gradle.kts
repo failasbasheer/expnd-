@@ -49,6 +49,15 @@ android {
         }
     }
 
+    // Personal build (tool/build_personal_apk.sh): layers a manifest that
+    // grants INTERNET for the optional cloud coach. Off unless the variable
+    // is set, so store and normal builds stay offline.
+    if (System.getenv("EXPND_PERSONAL_BUILD") == "1") {
+        sourceSets.getByName("release").manifest.srcFile(
+            "src/personal/AndroidManifest.xml"
+        )
+    }
+
     buildTypes {
         release {
             signingConfig = if (hasReleaseKeystore) {

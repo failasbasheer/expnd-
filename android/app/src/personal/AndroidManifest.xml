@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged ONLY into a personal build made with EXPND_PERSONAL_BUILD=1
+     (tool/build_personal_apk.sh), which turns on the optional Claude Haiku
+     coach. Store builds never see this file: there INTERNET stays removed by
+     the main manifest, so they cannot reach the network. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" tools:node="replace" />
+</manifest>

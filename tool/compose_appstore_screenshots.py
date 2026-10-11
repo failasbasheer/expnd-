@@ -33,6 +33,16 @@ tour on an iPad Pro 13-inch simulator into a separate folder, then compose:
 
 The same fractions hold: an iPad capture has the canvas's own 3:4 aspect, so
 the device lands at the same width share and still clears the bottom edge.
+
+Google Play: the phone set is 1080x2160 (Play caps the aspect at 2:1). Run the
+tour on an Android emulator into a separate folder, then compose straight
+into the listing assets:
+
+    python3 tool/compose_appstore_screenshots.py --play --src <android-shots>
+
+A 20:9 Android capture at the App Store width share would run off the 2:1
+canvas, so in this mode the device is scaled down (and re-centred) until it
+keeps the same bottom margin the App Store set has.
 """
 import argparse
 import os
@@ -49,6 +59,8 @@ SRC = "screenshots"
 OUT = "appstore_screenshots"
 SIZES = {"6.5in_1284x2778": (1284, 2778), "6.9in_1320x2868": (1320, 2868)}
 IPAD_SIZES = {"ipad_13in_2064x2752": (2064, 2752)}
+PLAY_OUT = "play_assets/screenshots"
+PLAY_SIZE = (1080, 2160)
 
 # (source stem, eyebrow, headline lines, output stem)
 SPECS = [
@@ -82,8 +94,10 @@ def _trim_clipped_row(im):
     row the scroll stopped mid-way through. Keep the header, then resume at
     the second hairline so the first full row starts flush beneath it.
     """
+    # A thick "rule" is a bright card, not a hairline: the capture opens on
+    # an unscrolled list (the Android tour), so there is nothing to trim.
     r = _rules(im)
-    if len(r) < 2:
+    if len(r) < 2 or r[0][1] - r[0][0] > 4:
         return im
     header_end, resume = r[0][1] + 1, r[1][1] + 1
     if resume - header_end > im.height // 4:   # nothing worth cutting
@@ -116,7 +130,7 @@ def _draw_tracked(draw, text, font, track, cx, ink_top, fill):
         x += w + track
 
 
-def compose(shot, eyebrow, headline, out_path, W, H):
+def compose(shot, eyebrow, headline, out_path, W, H, fit=False):
     # Sized off the phone canvas's proportions: on the squarer iPad canvas a
     # width-based size crowds the headline into the device frame.
     head_size = round(76 / 1284 * min(W, H * 1284 / 2778))
@@ -143,6 +157,14 @@ def compose(shot, eyebrow, headline, out_path, W, H):
                    head_top + i * head_adv - bb[1]), line, font=hf, fill=WHITE)
 
     dev_h = round(dev_w * shot.height / shot.width)
+    if fit:
+        # Keep the 1.0 set's bottom margin (2778 - 2557) instead of bleeding
+        # off a canvas that is shorter than the capture's aspect.
+        max_h = H - dev_top - round(221 / 2778 * H)
+        if dev_h > max_h:
+            dev_w = round(dev_w * max_h / dev_h)
+            dev_h = round(dev_w * shot.height / shot.width)
+            dev_x = round((W - dev_w) / 2)
     shot = shot.resize((dev_w, dev_h), Image.LANCZOS)
     mask = Image.new("L", (dev_w, dev_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
@@ -158,19 +180,28 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ipad", action="store_true",
                         help="render the 13-inch iPad set")
+    parser.add_argument("--play", action="store_true",
+                        help="render the 1080x2160 Google Play phone set "
+                             "into play_assets/screenshots")
+    parser.add_argument("--out", default=None,
+                        help="override the output folder")
     parser.add_argument("--src", default=SRC,
                         help="folder of tour captures (default: screenshots)")
     args = parser.parse_args()
-    sizes = IPAD_SIZES if args.ipad else SIZES
-    for label, (W, H) in sizes.items():
-        outdir = os.path.join(OUT, label)
+    if args.play:
+        jobs = [(args.out or PLAY_OUT, PLAY_SIZE)]
+    else:
+        sizes = IPAD_SIZES if args.ipad else SIZES
+        jobs = [(os.path.join(args.out or OUT, label), wh)
+                for label, wh in sizes.items()]
+    for outdir, (W, H) in jobs:
         os.makedirs(outdir, exist_ok=True)
         for src, eyebrow, headline, stem in SPECS:
             im = Image.open(os.path.join(args.src, f"{src}.png")).convert("RGB")
             if src.startswith("34_"):
                 im = _trim_clipped_row(im)
             out = os.path.join(outdir, f"{stem}.png")
-            compose(im, eyebrow, headline, out, W, H)
+            compose(im, eyebrow, headline, out, W, H, fit=args.play)
             print(f"{out}  <- {src}")
 
 

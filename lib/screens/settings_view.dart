@@ -2675,9 +2675,11 @@ class SettingsAvatarAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    final name = context.watch<SettingsStore>().userName;
-    final initial = name.trim().isNotEmpty
-        ? name.trim().characters.first.toUpperCase()
+    final name = context.watch<SettingsStore>().userName.trim();
+    // 'Your Name' is the setup screen's placeholder, not a name: showing its
+    // "Y" made the avatar look like someone else's.
+    final initial = name.isNotEmpty && name != 'Your Name'
+        ? name.characters.first.toUpperCase()
         : '?';
     return HeaderAction.custom(
       semanticLabel: 'Profile and settings',

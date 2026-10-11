@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'cloud_coach.dart';
 import 'insights.dart';
 
 enum AiCoachPrompt {
@@ -19,6 +20,9 @@ enum AiCoachPrompt {
 /// result from this so rule-based copy is never presented as AI.
 enum CoachSource {
   appleIntelligence('AI Coach', 'Private • On-device • Short answers'),
+  // Personal Android build only (see CloudCoach): says plainly that the
+  // insight lines are sent to a cloud model.
+  cloud('AI Coach', 'Claude Haiku • Sends insight lines only'),
   preview('AI Coach Preview', 'Simulator preview • Short answers'),
   rules('Insights', 'Private • Calculated from your data');
 
@@ -82,6 +86,7 @@ class AppleIntelligence {
 
   static Future<bool> _queryAvailability() async {
     if (isPreview) return true;
+    if (CloudCoach.enabled) return true;
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return false;
     try {
       return await _channel.invokeMethod<bool>('isAvailable') ?? false;
@@ -123,7 +128,7 @@ class AppleIntelligence {
 
     final modelCategory = await _modelCategory(note, allowedCategories);
     if (modelCategory != null) {
-      return (category: modelCategory, source: CoachSource.appleIntelligence);
+      return (category: modelCategory, source: _modelSource);
     }
     final category = ruleCategory(note, allowedCategories);
     return category == null
@@ -136,6 +141,12 @@ class AppleIntelligence {
     List<String> allowedCategories,
   ) async {
     if (!await isAvailable()) return null;
+    if (CloudCoach.enabled) {
+      return CloudCoach.category(
+        note.substring(0, note.length > 240 ? 240 : note.length),
+        allowedCategories,
+      );
+    }
     try {
       final raw = await _channel.invokeMethod<String>('suggestCategory', {
         'description': note.substring(0, note.length > 240 ? 240 : note.length),
@@ -193,9 +204,7 @@ class AppleIntelligence {
     }
 
     final modelText = await _modelInsight(insights, prompt);
-    if (modelText != null) {
-      return CoachAnswer(modelText, CoachSource.appleIntelligence);
-    }
+    if (modelText != null) return CoachAnswer(modelText, _modelSource);
     return CoachAnswer(ruleResponse(insights, prompt), CoachSource.rules);
   }
 
@@ -211,10 +220,15 @@ class AppleIntelligence {
         .toList(growable: false);
 
     try {
-      final raw = await _channel.invokeMethod<String>('summarizeInsights', {
-        'facts': facts,
-        'mode': prompt.wireName,
-      });
+      final raw = CloudCoach.enabled
+          ? await CloudCoach.summarize([
+              for (final f in facts)
+                (title: f['title']!, detail: f['detail']!),
+            ], prompt.wireName)
+          : await _channel.invokeMethod<String>('summarizeInsights', {
+              'facts': facts,
+              'mode': prompt.wireName,
+            });
       final summary = raw?.replaceAll(RegExp(r'\s+'), ' ').trim();
       if (summary == null || summary.isEmpty || summary.length > 320) {
         return null;
@@ -231,6 +245,10 @@ class AppleIntelligence {
       return null;
     }
   }
+
+  /// Which model produced a model answer on this device.
+  static CoachSource get _modelSource =>
+      CloudCoach.enabled ? CoachSource.cloud : CoachSource.appleIntelligence;
 
   /// Deterministic coach copy assembled only from the verified facts.
   @visibleForTesting

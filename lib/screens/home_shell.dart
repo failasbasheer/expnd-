@@ -131,70 +131,81 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    return Scaffold(
-      backgroundColor: oc.bg,
-      // The tab bar is translucent, so the body has to run underneath it —
-      // otherwise there is nothing behind the glass to blur and it just reads
-      // as a flat tint. Tab screens reserve the bar's height via
-      // [ExpndSpacing.scrollBottomUnderTabBar], which Scaffold reports to the
-      // body as MediaQuery.padding.bottom.
-      extendBody: true,
-      body: Stack(
-        children: [
-          SafeArea(
-            // Glass headers extend under the status bar themselves.
-            top: !ExpndGlass.enabled,
-            bottom: false,
-            child: _AnimatedTabStack(
-              index: _tab.index,
-              children: [
-                _DashboardView(
-                  onAdd: () => _openAdd(),
-                  onOpenAccount: _openAccountInWallet,
-                  onOpenPlan: () => setState(() => _tab = ExpndTab.plan),
-                ),
-                const AnalyticsView(),
-                WalletView(
-                  focusAccountId: _walletFocus,
-                  onFocusConsumed: () {
-                    if (_walletFocus != null) {
-                      setState(() => _walletFocus = null);
-                    }
-                  },
-                ),
-                const PlanView(),
-              ],
+    // Android back on a secondary tab returns to Home instead of leaving the
+    // app; only Home lets the system back gesture close the activity.
+    return PopScope(
+      canPop: _tab == ExpndTab.dashboard,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && mounted) setState(() => _tab = ExpndTab.dashboard);
+      },
+      child: Scaffold(
+        backgroundColor: oc.bg,
+        // The tab bar is translucent, so the body has to run underneath it —
+        // otherwise there is nothing behind the glass to blur and it just reads
+        // as a flat tint. Tab screens reserve the bar's height via
+        // [ExpndSpacing.scrollBottomUnderTabBar], which Scaffold reports to the
+        // body as MediaQuery.padding.bottom.
+        extendBody: true,
+        body: Stack(
+          children: [
+            SafeArea(
+              // Glass headers extend under the status bar themselves.
+              top: !ExpndGlass.enabled,
+              bottom: false,
+              child: _AnimatedTabStack(
+                index: _tab.index,
+                children: [
+                  _DashboardView(
+                    onAdd: () => _openAdd(),
+                    onOpenAccount: _openAccountInWallet,
+                    onOpenPlan: () => setState(() => _tab = ExpndTab.plan),
+                  ),
+                  const AnalyticsView(),
+                  WalletView(
+                    focusAccountId: _walletFocus,
+                    onFocusConsumed: () {
+                      if (_walletFocus != null) {
+                        setState(() => _walletFocus = null);
+                      }
+                    },
+                  ),
+                  const PlanView(),
+                ],
+              ),
             ),
-          ),
-          // Toast
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOut,
-            top: _showToast ? MediaQuery.of(context).padding.top + 10 : -120,
-            left: 16,
-            right: 16,
-            child: AnimatedOpacity(
-              opacity: _showToast ? 1 : 0,
-              duration: const Duration(milliseconds: 250),
-              child: _recurringPosted != null
-                  ? _RecurringToast(
-                      posted: _recurringPosted!,
-                      onTap: () {
-                        setState(() => _showToast = false);
-                        showUpcoming(context);
-                      },
-                    )
-                  : _toast == null
-                  ? const SizedBox.shrink()
-                  : _ToastBanner(transaction: _toast!, overage: _toastOverage),
+            // Toast
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOut,
+              top: _showToast ? MediaQuery.of(context).padding.top + 10 : -120,
+              left: 16,
+              right: 16,
+              child: AnimatedOpacity(
+                opacity: _showToast ? 1 : 0,
+                duration: const Duration(milliseconds: 250),
+                child: _recurringPosted != null
+                    ? _RecurringToast(
+                        posted: _recurringPosted!,
+                        onTap: () {
+                          setState(() => _showToast = false);
+                          showUpcoming(context);
+                        },
+                      )
+                    : _toast == null
+                    ? const SizedBox.shrink()
+                    : _ToastBanner(
+                        transaction: _toast!,
+                        overage: _toastOverage,
+                      ),
+              ),
             ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: _TabBar(
-        selected: _tab,
-        onSelect: (t) => setState(() => _tab = t),
-        onAdd: () => _openAdd(),
+          ],
+        ),
+        bottomNavigationBar: _TabBar(
+          selected: _tab,
+          onSelect: (t) => setState(() => _tab = t),
+          onAdd: () => _openAdd(),
+        ),
       ),
     );
   }

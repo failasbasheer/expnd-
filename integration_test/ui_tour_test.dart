@@ -418,10 +418,16 @@ Future<void> _safeSettle(WidgetTester tester) async {
   }
 }
 
+bool _surfaceConverted = false;
+
 Future<void> _shot(WidgetTester tester, String name) async {
   await _safeSettle(tester);
-  if (Platform.isAndroid) {
+  // Android allows one surface->image conversion per test; it is reverted in
+  // the binding's own tearDown, so later shots in the same test reuse it.
+  if (Platform.isAndroid && !_surfaceConverted) {
     await binding.convertFlutterSurfaceToImage();
+    _surfaceConverted = true;
+    addTearDown(() => _surfaceConverted = false);
     await tester.pump();
   }
   await binding.takeScreenshot(name);
