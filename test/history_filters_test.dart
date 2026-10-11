@@ -1,9 +1,5 @@
-// History opens on the list, not on its own controls. The filter area used to
-// stack five rows — search, type, category, account, tag — above the first
-// transaction, which on a short result set meant the filters outweighed the
-// answer. Category/account/tag now collapse behind a toggle, so what's pinned
-// here is that the collapse never silently swallows an active filter, and that
-// a caller handing in a date range still lands on exactly that range.
+// History keeps secondary filters compact and preserves active selections when
+// the controls are collapsed.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -141,30 +137,28 @@ void main() {
     expect(transfer, findsOneWidget);
     expect(tester.getTopLeft(transfer).dy, tester.getTopLeft(all).dy);
 
-    // The three collapsible rows are not laid out at all.
-    expect(find.text('ALL ACCOUNTS'), findsNothing);
-    expect(find.text('ALL TAGS'), findsNothing);
-    expect(find.text('GROCERIES'), findsNothing);
+    expect(find.text('Category'), findsNothing);
+    expect(find.text('Account'), findsNothing);
+    expect(find.text('Tag'), findsNothing);
 
     expect(_showFilters, findsOneWidget);
   });
 
-  testWidgets('the toggle reveals and hides the secondary rows', (
-    tester,
-  ) async {
+  testWidgets('the toggle reveals and hides compact selectors', (tester) async {
     await _pump(tester);
 
     await tester.tap(_showFilters);
     await tester.pumpAndSettle();
 
-    expect(find.text('ALL ACCOUNTS'), findsOneWidget);
-    expect(find.text('ALL TAGS'), findsOneWidget);
+    expect(find.text('Category'), findsOneWidget);
+    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('Tag'), findsOneWidget);
     expect(_hideFilters, findsOneWidget);
 
     await tester.tap(_hideFilters);
     await tester.pumpAndSettle();
 
-    expect(find.text('ALL ACCOUNTS'), findsNothing);
+    expect(find.text('Account'), findsNothing);
   });
 
   testWidgets('a filter set while expanded keeps applying once collapsed, '
@@ -175,7 +169,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Narrow to a tag that only one of the five transactions carries.
-    await tester.tap(find.text('#OSAKA'));
+    await tester.tap(find.text('Tag'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('#osaka'));
     await tester.pumpAndSettle();
     expect(find.text('1 transaction'), findsOneWidget);
 
@@ -185,7 +181,7 @@ void main() {
     // Still filtered — collapsing hides the control, not the effect — and the
     // toggle carries a count so the narrowing is never invisible.
     expect(find.text('1 transaction'), findsOneWidget);
-    expect(find.text('ALL TAGS'), findsNothing);
+    expect(find.text('#osaka'), findsNothing);
     expect(find.text('1'), findsWidgets);
   });
 

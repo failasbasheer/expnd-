@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:expnd/store/settings_store.dart';
+import 'package:expnd/models/models.dart';
+import 'package:expnd/services/widget_bridge.dart';
 import 'package:expnd/theme/currencies.dart';
 import 'package:expnd/widgets/privacy_eye.dart';
 
@@ -54,8 +56,18 @@ void main() {
       expect(formatCurrency(1000, 'KWD'), 'KWD1,000.000');
     });
 
-    test('the home-screen widget bridge opts out and stays readable', () {
-      expect(formatCurrency(1250.5, 'USD', maskable: false), '\$1,250.50');
+    test('the Android widget recent rows mask every transaction amount', () {
+      for (final type in TransactionType.values) {
+        final transaction = Transaction(
+          amount: 1250.5,
+          category: TransactionCategory.food,
+          type: type,
+          date: DateTime(2026, 10, 11),
+        );
+        final label = WidgetBridge.signedAmountFor(transaction, 'USD');
+        expect(label, contains(AmountPrivacy.mask));
+        expect(label, isNot(contains('1,250')));
+      }
     });
   });
 

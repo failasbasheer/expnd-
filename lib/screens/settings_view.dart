@@ -29,7 +29,8 @@ import 'add_transaction.dart';
 /// label money with, and the app's own settings. Reached from the avatar in
 /// the header rather than a tab, because it is not somewhere you go daily.
 class SettingsView extends StatefulWidget {
-  const SettingsView({super.key});
+  final bool openReminders;
+  const SettingsView({super.key, this.openReminders = false});
 
   @override
   State<SettingsView> createState() => _SettingsViewState();
@@ -97,6 +98,7 @@ class _SettingsViewState extends State<SettingsView> {
               const SizedBox(height: 12),
               DisclosureSection(
                 title: 'Reminders & alerts',
+                initiallyExpanded: widget.openReminders,
                 icon: 'bell.fill',
                 tint: hexColor('F97316'),
                 subtitle: 'Bills, budgets and daily nudges',
@@ -167,11 +169,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   /// The 1.0 profile card: a raised gold NeoPOP block with an ink monogram,
   /// WELCOME BACK over your name, and a strip of ledger stats.
-  Widget _avatarCard(
-    ExpndColors oc,
-    AppStore store,
-    SettingsStore settings,
-  ) {
+  Widget _avatarCard(ExpndColors oc, AppStore store, SettingsStore settings) {
     final ink = ExpndColors.ink;
     final name = settings.userName.trim();
     final named = name.isNotEmpty && name != 'Your Name';

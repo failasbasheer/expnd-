@@ -246,7 +246,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   bool _shownWhatsNew = false;
   // A quick-add tap that arrived while the app was locked, replayed on unlock.
   bool _pendingQuickAdd = false;
-  // Which destination that tap was for: 'add', 'captures', or 'quick'.
+  // Which destination that tap was for: 'add', 'captures', 'quick', or 'show'.
   String? _pendingTarget;
   StreamSubscription<Uri?>? _widgetClicks;
   // When the app last dropped to the background, so resume can decide whether
@@ -315,7 +315,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     final target = uri.host.isNotEmpty
         ? uri.host
         : uri.path.replaceAll('/', '');
-    if (target != 'add' && target != 'captures') return;
+    if (target != 'add' && target != 'captures' && target != 'show') return;
     _pendingTarget = target;
     final settings = context.read<SettingsStore>();
     final locked = settings.biometricLockEnabled && !_unlocked;
@@ -338,6 +338,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       showCaptureInbox(ctx);
     } else if (target == 'quick') {
       showQuickCapture(ctx, source: 'backtap');
+    } else if (target == 'show') {
+      ctx.read<SettingsStore>().amountsHidden = false;
     } else {
       showAddTransaction(ctx);
     }

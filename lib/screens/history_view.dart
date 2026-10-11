@@ -12,8 +12,9 @@ import '../widgets/glass_header.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/neopop.dart';
-import '../widgets/tag_manager.dart';
+import '../widgets/filter_totals.dart';
 import '../widgets/segmented_picker.dart';
+import '../widgets/tag_manager.dart';
 import 'add_transaction.dart';
 import 'transaction_detail.dart';
 
@@ -53,15 +54,10 @@ class _HistoryViewState extends State<HistoryView> {
   late DateTime? _startDate = widget.initialStartDate;
   late DateTime? _endDate = widget.initialEndDate;
 
-  /// Category / account / tag chips are collapsed by default. Expanded, they
-  /// stack three scrolling rows on top of the search field and the type row,
-  /// so the screen opened with five rows of controls above the first
-  /// transaction — most of the viewport spent on filters nobody had asked for
-  /// yet. Search and type stay out; the rest is a tap away.
+  /// Secondary filters stay behind one button until needed.
   bool _filtersExpanded = false;
 
-  /// How many of the collapsible filters are actually narrowing the list. Shown
-  /// on the toggle so an active filter is never invisible while collapsed.
+  /// Show active filters on the toggle even when their controls are collapsed.
   int get _hiddenFilterCount =>
       (_categoryFilter != null ? 1 : 0) +
       (_customCategoryFilter != null ? 1 : 0) +
@@ -187,7 +183,7 @@ class _HistoryViewState extends State<HistoryView> {
               else
                 FadeSlideIn(
                   index: 1,
-                  child: _filterArea(oc, store, accounts, filtered.length),
+                  child: _filterArea(oc, store, accounts, filtered),
                 ),
               if (!ExpndGlass.enabled) Container(height: 1, color: oc.border),
             ],
@@ -386,8 +382,9 @@ class _HistoryViewState extends State<HistoryView> {
     ExpndColors oc,
     AppStore store,
     List<Account> accounts,
-    int count,
+    List<Transaction> shown,
   ) {
+    final count = shown.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: Column(
@@ -478,70 +475,26 @@ class _HistoryViewState extends State<HistoryView> {
             selected: _typeFilter,
             onSelected: (value) => setState(() => _typeFilter = value),
           ),
-          // The three secondary rows, revealed together. AnimatedSize keeps the
-          // list below from snapping up and down as they come and go.
+          // Compact selectors keep the transaction list in view.
           AnimatedSize(
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOut,
             alignment: Alignment.topCenter,
             child: !_filtersExpanded
                 ? const SizedBox(width: double.infinity)
-                : Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      // Category chips
-                      SizedBox(
-                        height: 30,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: [
-                            _categoryChip(oc, null),
-                            for (final cat in TransactionCategory.values) ...[
-                              const SizedBox(width: 8),
-                              _categoryChip(oc, cat),
-                            ],
-                            for (final cat in store.customCategories) ...[
-                              const SizedBox(width: 8),
-                              _customCategoryChip(oc, cat),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (accounts.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 30,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            children: [
-                              _accountChip(oc, null),
-                              for (final acc in accounts) ...[
-                                const SizedBox(width: 8),
-                                _accountChip(oc, acc),
-                              ],
-                            ],
-                          ),
-                        ),
+                : Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Row(
+                      children: [
+                        Expanded(child: _categoryMenu(oc, store)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _accountMenu(oc, accounts)),
+                        if (store.allTags.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Expanded(child: _tagMenu(oc, store.allTags)),
+                        ],
                       ],
-                      // Tag chips only appear once tags exist — no dead row for
-                      // people who never use them.
-                      if (store.allTags.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 30,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            children: [
-                              _tagChip(oc, null),
-                              for (final tag in store.allTags) ...[
-                                const SizedBox(width: 8),
-                                _tagChip(oc, tag),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
           ),
           const SizedBox(height: 10),
@@ -550,9 +503,11 @@ class _HistoryViewState extends State<HistoryView> {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text(
-                '$count ${count == 1 ? 'transaction' : 'transactions'}',
-                style: TextStyle(fontSize: 12, color: oc.muted),
+              // Count plus what the current filters add up to.
+              FilterTotals(
+                transactions: shown,
+                currencyCode: context.watch<SettingsStore>().currencyCode,
+                lead: '$count ${count == 1 ? 'transaction' : 'transactions'}',
               ),
               if (_hasFilters)
                 TextButton(
@@ -604,138 +559,125 @@ class _HistoryViewState extends State<HistoryView> {
     );
   }
 
-  Widget _tagChip(ExpndColors oc, String? tag) => _chip(
-    oc,
-    tag == null ? 'ALL TAGS' : '#${tag.toUpperCase()}',
-    _tagFilter == tag,
-    () => setState(() => _tagFilter = tag),
-    // Real tags can be renamed or deleted; "ALL TAGS" is just the clear-all.
-    onLongPress: tag == null ? null : () => _manageTag(tag),
-  );
-
-  Widget _chip(
+  Widget _filterMenu<T>(
     ExpndColors oc,
     String label,
+    List<PopupMenuEntry<T>> items,
+    ValueChanged<T> onSelected,
     bool active,
-    VoidCallback onTap, {
-    Widget? leading,
-    VoidCallback? onLongPress,
-  }) {
-    return PressableScale(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? oc.text : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.transparent, width: 0),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (leading != null) ...[leading, const SizedBox(width: 5)],
-            Text(
+  ) => PopupMenuButton<T>(
+    tooltip: 'Filter by $label',
+    onSelected: onSelected,
+    color: oc.surface,
+    itemBuilder: (_) => items,
+    child: Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: active ? oc.accent.withValues(alpha: 0.12) : oc.surface,
+        border: Border.all(color: active ? oc.accent : oc.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: active ? oc.bg : oc.muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: active ? oc.accent : oc.text,
               ),
             ),
-          ],
-        ),
+          ),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: oc.muted),
+        ],
       ),
+    ),
+  );
+
+  Widget _categoryMenu(ExpndColors oc, AppStore store) {
+    final selected =
+        store.customCategoryFor(_customCategoryFilter)?.name ??
+        _categoryFilter?.raw ??
+        'Category';
+    return _filterMenu<String>(
+      oc,
+      selected,
+      [
+        const PopupMenuItem(value: '', child: Text('All categories')),
+        for (final cat in TransactionCategory.values)
+          PopupMenuItem(value: 'built:${cat.name}', child: Text(cat.raw)),
+        for (final cat in store.customCategories)
+          PopupMenuItem(value: 'custom:${cat.id}', child: Text(cat.name)),
+      ],
+      (value) => setState(() {
+        _categoryFilter = value.startsWith('built:')
+            ? TransactionCategory.values.byName(value.substring(6))
+            : null;
+        _customCategoryFilter = value.startsWith('custom:')
+            ? value.substring(7)
+            : null;
+      }),
+      _categoryFilter != null || _customCategoryFilter != null,
     );
   }
 
-  // Tag chips long-press into rename/delete (shared with Profile). Keep the
-  // active filter pointed at the tag through a rename, and clear it on delete.
+  Widget _accountMenu(ExpndColors oc, List<Account> accounts) =>
+      _filterMenu<String>(
+        oc,
+        _accountFilter?.name ?? 'Account',
+        [
+          const PopupMenuItem(value: '', child: Text('All accounts')),
+          for (final account in accounts)
+            PopupMenuItem(value: account.id, child: Text(account.name)),
+        ],
+        (value) => setState(() {
+          _accountFilter = value.isEmpty
+              ? null
+              : accounts.where((a) => a.id == value).firstOrNull;
+        }),
+        _accountFilter != null,
+      );
+
+  Widget _tagMenu(ExpndColors oc, List<String> tags) => _filterMenu<String>(
+    oc,
+    _tagFilter == null ? 'Tag' : '#$_tagFilter',
+    [
+      const PopupMenuItem(value: '', child: Text('All tags')),
+      for (final tag in tags) PopupMenuItem(value: tag, child: Text('#$tag')),
+      if (_tagFilter != null)
+        PopupMenuItem(
+          value: 'manage:$_tagFilter',
+          child: Text('Manage #$_tagFilter'),
+        ),
+    ],
+    (value) {
+      if (value.startsWith('manage:')) {
+        _manageTag(value.substring(7));
+      } else {
+        setState(() => _tagFilter = value.isEmpty ? null : value);
+      }
+    },
+    _tagFilter != null,
+  );
+
   void _manageTag(String tag) {
     showTagManager(
       context,
       tag,
       onRenamed: (newName) {
-        if (_tagFilter != null &&
-            _tagFilter!.toLowerCase() == tag.toLowerCase()) {
+        if (mounted && _tagFilter?.toLowerCase() == tag.toLowerCase()) {
           setState(() => _tagFilter = newName);
         }
       },
       onDeleted: () {
-        if (_tagFilter != null &&
-            _tagFilter!.toLowerCase() == tag.toLowerCase()) {
+        if (mounted && _tagFilter?.toLowerCase() == tag.toLowerCase()) {
           setState(() => _tagFilter = null);
         }
       },
-    );
-  }
-
-  Widget _categoryChip(ExpndColors oc, TransactionCategory? cat) {
-    final active = _customCategoryFilter == null && _categoryFilter == cat;
-    return _chip(
-      oc,
-      cat?.raw.toUpperCase() ?? 'ALL',
-      active,
-      () {
-        Haptics.light();
-        setState(() {
-          _categoryFilter = cat;
-          _customCategoryFilter = null;
-        });
-      },
-      leading: cat != null
-          ? Icon(
-              sfIcon(cat.icon),
-              size: 10,
-              color: active ? ExpndColors.ink : oc.muted,
-            )
-          : null,
-    );
-  }
-
-  Widget _customCategoryChip(ExpndColors oc, CustomCategory cat) {
-    final active = _customCategoryFilter == cat.id;
-    return _chip(
-      oc,
-      cat.name.toUpperCase(),
-      active,
-      () {
-        Haptics.light();
-        setState(() {
-          _customCategoryFilter = active ? null : cat.id;
-          _categoryFilter = null;
-        });
-      },
-      leading: Icon(
-        Icons.local_offer,
-        size: 10,
-        color: active ? ExpndColors.ink : oc.muted,
-      ),
-    );
-  }
-
-  Widget _accountChip(ExpndColors oc, Account? acc) {
-    final active = _accountFilter?.id == acc?.id;
-    return _chip(
-      oc,
-      acc?.name ?? 'ALL ACCOUNTS',
-      active,
-      () {
-        Haptics.light();
-        setState(() => _accountFilter = acc);
-      },
-      leading: acc != null
-          ? Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: hexColor(acc.colorHex),
-                shape: BoxShape.circle,
-              ),
-            )
-          : null,
     );
   }
 

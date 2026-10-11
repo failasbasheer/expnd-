@@ -36,7 +36,8 @@ import 'reimbursements_view.dart';
 /// taxonomy and app settings in one 4k-line scroll. Profile kept the settings;
 /// this tab took the money.
 class PlanView extends StatefulWidget {
-  const PlanView({super.key});
+  final bool showClose;
+  const PlanView({super.key, this.showClose = false});
 
   @override
   State<PlanView> createState() => _PlanViewState();
@@ -81,10 +82,19 @@ class _PlanViewState extends State<PlanView> {
     return Container(
       color: oc.bg,
       child: GlassHeaderLayout(
-        header: const ExpndHeader(
+        header: ExpndHeader(
           icon: 'target',
           title: 'PLAN',
-          actions: [SettingsAvatarAction()],
+          actions: [
+            if (widget.showClose)
+              HeaderAction(
+                icon: 'xmark',
+                onPressed: () => Navigator.of(context).maybePop(),
+                semanticLabel: 'Close plan',
+              )
+            else
+              const SettingsAvatarAction(),
+          ],
         ),
         body: (context, top) => ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -449,8 +459,7 @@ class _PlanViewState extends State<PlanView> {
                 : 'ON TRACK',
             statusColor: color,
             title: '${_fmt(monthExpenses)} spent of ${_fmt(budget)}',
-            subtitle:
-                isCalendar && settings.budgetRollover && budget != base
+            subtitle: isCalendar && settings.budgetRollover && budget != base
                 ? 'this month · ${_fmt(base)} '
                       '${budget > base ? '+' : '−'} ${_fmt((budget - base).abs())} rolled over'
                 : '${MaterialLocalizations.of(context).formatMediumDate(period.start)}–${MaterialLocalizations.of(context).formatMediumDate(period.end.subtract(const Duration(days: 1)))}',
@@ -492,7 +501,10 @@ class _PlanViewState extends State<PlanView> {
               // evaporating; an overspent month starts the next one smaller.
               if (isCalendar)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                   child: Row(
                     children: [
                       Icon(sfIcon('repeat'), size: 20, color: oc.accent),

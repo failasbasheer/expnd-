@@ -109,6 +109,7 @@ class WidgetBridge {
       await Future.wait([
         HomeWidget.saveWidgetData('has_data', store.accounts.isNotEmpty),
         HomeWidget.saveWidgetData('currency', code),
+        HomeWidget.saveWidgetData('amounts_hidden', settings.amountsHidden),
         HomeWidget.saveWidgetData('symbol', currencySymbol(code)),
         HomeWidget.saveWidgetData(
           'left_to_spend',
@@ -138,7 +139,7 @@ class WidgetBridge {
           HomeWidget.saveWidgetData('tx${i}_note', _label(recent[i], store)),
           HomeWidget.saveWidgetData(
             'tx${i}_amount',
-            _signedAmount(recent[i], code),
+            signedAmountFor(recent[i], code),
           ),
           HomeWidget.saveWidgetData(
             'tx${i}_positive',
@@ -186,8 +187,9 @@ class WidgetBridge {
 
   /// Signed, symbol-prefixed amount: `+₹1,200.00` / `-$4.50`. Transfers are
   /// balance-neutral overall, so they read without a sign.
-  static String _signedAmount(Transaction t, String code) {
-    final formatted = formatCurrency(t.amount, code, maskable: false);
+  @visibleForTesting
+  static String signedAmountFor(Transaction t, String code) {
+    final formatted = formatCurrency(t.amount, code);
     switch (t.type) {
       case TransactionType.income:
         return '+$formatted';

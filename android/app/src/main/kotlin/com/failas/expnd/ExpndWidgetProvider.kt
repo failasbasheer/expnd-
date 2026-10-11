@@ -63,6 +63,10 @@ class ExpndWidgetProvider : HomeWidgetProvider() {
         )
         views.setTextViewText(R.id.widget_month_spent, data.getString("month_spent", "—"))
         views.setTextViewText(R.id.widget_budget, data.getString("budget_text", "") ?: "")
+        views.setViewVisibility(
+            R.id.widget_show,
+            if (data.getBoolean("amounts_hidden", false)) View.VISIBLE else View.GONE
+        )
 
         // Recent transactions.
         val count = data.readInt("tx_count", 0)
@@ -95,6 +99,12 @@ class ExpndWidgetProvider : HomeWidgetProvider() {
             R.id.widget_add,
             HomeWidgetLaunchIntent.getActivity(
                 context, MainActivity::class.java, Uri.parse("expnd://add")
+            )
+        )
+        views.setOnClickPendingIntent(
+            R.id.widget_show,
+            HomeWidgetLaunchIntent.getActivity(
+                context, MainActivity::class.java, Uri.parse("expnd://show")
             )
         )
     }

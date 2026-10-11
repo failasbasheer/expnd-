@@ -21,6 +21,8 @@ import '../widgets/neopop.dart';
 import '../widgets/neopop_cards.dart';
 import '../widgets/privacy_eye.dart';
 import '../widgets/segmented_picker.dart';
+import '../widgets/filter_totals.dart';
+import 'get_started_screen.dart';
 import 'add_transaction.dart';
 import 'capture_inbox_view.dart';
 import 'transaction_detail.dart';
@@ -99,6 +101,39 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     });
   }
 
+  void _selectTab(ExpndTab tab) {
+    setState(() => _tab = tab);
+    final settings = context.read<SettingsStore>();
+    final showTip = tab == ExpndTab.wallet
+        ? !settings.walletTipSeen
+        : tab == ExpndTab.plan && !settings.planTipSeen;
+    if (!showTip) return;
+    if (tab == ExpndTab.wallet) settings.walletTipSeen = true;
+    if (tab == ExpndTab.plan) settings.planTipSeen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tab == ExpndTab.wallet
+                ? 'Tap an account to see its details.'
+                : 'Start with a monthly budget; you can add goals later.',
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
+  }
+
+  void _openGetStarted() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const GetStartedScreen(),
+      ),
+    );
+  }
+
   Future<void> _openAdd({Transaction? editing, String? initialText}) async {
     final store = context.read<AppStore>();
     final before = store.transactions.length;
@@ -158,7 +193,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                   _DashboardView(
                     onAdd: () => _openAdd(),
                     onOpenAccount: _openAccountInWallet,
-                    onOpenPlan: () => setState(() => _tab = ExpndTab.plan),
+                    onOpenPlan: () => _selectTab(ExpndTab.plan),
+                    onOpenGetStarted: _openGetStarted,
                   ),
                   const AnalyticsView(),
                   WalletView(
@@ -203,7 +239,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         ),
         bottomNavigationBar: _TabBar(
           selected: _tab,
-          onSelect: (t) => setState(() => _tab = t),
+          onSelect: _selectTab,
           onAdd: () => _openAdd(),
         ),
       ),
@@ -1048,10 +1084,12 @@ class _DashboardView extends StatefulWidget {
   /// Budgets are owned by the PLAN tab, so the dashboard's budget bar hands off
   /// there rather than duplicating the controls.
   final VoidCallback onOpenPlan;
+  final VoidCallback onOpenGetStarted;
   const _DashboardView({
     required this.onAdd,
     required this.onOpenAccount,
     required this.onOpenPlan,
+    required this.onOpenGetStarted,
   });
 
   @override
@@ -1104,6 +1142,14 @@ class _DashboardViewState extends State<_DashboardView> {
         ? monthTx
         : monthTx.where((t) => t.type == _filter).toList();
 
+    final showGetStarted =
+        settings.getStartedEligible &&
+        !settings.getStartedDismissed &&
+        !(store.accounts.isNotEmpty &&
+            store.transactions.any((t) => t.type == TransactionType.expense) &&
+            settings.monthlyBudget > 0 &&
+            settings.dailyReminder);
+
     final todaySpent = store.transactions
         .where((t) => t.type == TransactionType.expense && _isToday(t.date))
         .fold(0.0, (s, t) => s + t.amount);
@@ -1111,6 +1157,18 @@ class _DashboardViewState extends State<_DashboardView> {
     // Projected forward from today regardless of which month is on screen; the
     // card that renders it is hidden unless the current month is showing.
     final upcoming = projectUpcoming(store);
+    final insights = _isCurrentMonth
+        ? buildInsights(
+            store,
+            code,
+            monthlyBudget: settings.budgetCycle == 'calendar'
+                ? store.effectiveMonthlyBudget(
+                    settings.monthlyBudget,
+                    rollover: settings.budgetRollover,
+                  )
+                : 0,
+          ).take(3).toList()
+        : <Insight>[];
 
     final lastMonth = DateTime(_displayMonth.year, _displayMonth.month - 1);
     final lastMonthNet = store.transactions
@@ -1135,85 +1193,106 @@ class _DashboardViewState extends State<_DashboardView> {
       child: GlassHeaderLayout(
         header: _header(context, upcoming.length),
         collapsedHeader: _compactHeader(context),
-        body: (context, top) => ListView(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16 + top,
-            16,
-            ExpndSpacing.scrollBottomUnderTabBar(context),
-          ),
-          children: [
-            _slot(
-              1,
-              _balanceHero(
-                context,
-                balance,
-                income,
-                expenses,
-                lastMonthNet,
-                code,
+        body: (context, top) => ScrollConfiguration(
+          // Android's stretch overscroll pulls the list away from the pinned
+          // month header, leaving a large empty band at the top of Home.
+          behavior: ScrollConfiguration.of(context).copyWith(overscroll: false),
+          child: ListView(
+            physics: const ClampingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16 + top,
+              16,
+              ExpndSpacing.scrollBottomUnderTabBar(context),
+            ),
+            children: [
+              if (_isCurrentMonth && showGetStarted)
+                _slot(
+                  0,
+                  OutlinedButton.icon(
+                    onPressed: widget.onOpenGetStarted,
+                    icon: const Icon(Icons.checklist_rounded, size: 18),
+                    label: const Text('Continue setup'),
+                  ),
+                ),
+              _slot(
+                1,
+                _balanceHero(
+                  context,
+                  balance,
+                  income,
+                  expenses,
+                  lastMonthNet,
+                  code,
+                ),
               ),
-            ),
-            _slot(
-              2,
-              _isCurrentMonth && todaySpent > 0
-                  ? _todayRow(context, todaySpent, code)
-                  : null,
-            ),
-            _slot(
-              3,
-              settings.monthlyBudget > 0 &&
-                      (settings.budgetCycle == 'calendar' || _isCurrentMonth)
-                  ? _budgetBar(
-                      context,
-                      settings.budgetCycle == 'calendar'
-                          ? expenses
-                          : budgetSpentInPeriod(
-                              store,
-                              budgetPeriodFor(settings, DateTime.now()),
-                            ),
-                      settings.budgetCycle == 'calendar' &&
-                              settings.budgetRollover
-                          ? store.rolledOverLimit(
-                              settings.monthlyBudget,
-                              _displayMonth,
-                            )
-                          : settings.monthlyBudget,
-                      code,
-                    )
-                  : null,
-            ),
-            // Forward-looking, so it only belongs on the current month —
-            // it would be nonsense sitting under a past month's figures.
-            _slot(
-              4,
-              _isCurrentMonth && upcoming.isNotEmpty
-                  ? _upcomingCard(context, store, upcoming, code)
-                  : null,
-            ),
-            // Only for the month you're actually in: an insight is a
-            // read on where things stand now, not a history lesson.
-            _slot(
-              5,
-              _isCurrentMonth ? _insightsStrip(context, store, code) : null,
-            ),
-            _slot(
-              6,
-              store.accounts.isNotEmpty
-                  ? _accountsRow(context, store, code)
-                  : null,
-            ),
-            _slot(7, _transactionsCard(context, store, filtered, code)),
-            // Last, not first: captures are a small housekeeping chore,
-            // and putting them above the balance would make every widget
-            // tap feel like an error to be cleared.
-            _slot(
-              8,
-              _isCurrentMonth && store.pendingCaptures.isNotEmpty
-                  ? _CaptureInboxBanner(count: store.pendingCaptures.length)
-                  : null,
-            ),
-          ],
+              _slot(
+                2,
+                _isCurrentMonth && todaySpent > 0
+                    ? _todayRow(context, todaySpent, code)
+                    : null,
+              ),
+              _slot(
+                3,
+                settings.monthlyBudget > 0 &&
+                        (settings.budgetCycle == 'calendar' || _isCurrentMonth)
+                    ? _budgetBar(
+                        context,
+                        settings.budgetCycle == 'calendar'
+                            ? expenses
+                            : budgetSpentInPeriod(
+                                store,
+                                budgetPeriodFor(settings, DateTime.now()),
+                              ),
+                        settings.budgetCycle == 'calendar' &&
+                                settings.budgetRollover
+                            ? store.rolledOverLimit(
+                                settings.monthlyBudget,
+                                _displayMonth,
+                              )
+                            : settings.monthlyBudget,
+                        code,
+                      )
+                    : null,
+              ),
+              _slot(
+                4,
+                insights.isNotEmpty
+                    ? _AiInsightNarrative(insights: insights)
+                    : null,
+              ),
+              // Forward-looking, so it only belongs on the current month —
+              // it would be nonsense sitting under a past month's figures.
+              _slot(
+                5,
+                _isCurrentMonth && upcoming.isNotEmpty
+                    ? _upcomingCard(context, store, upcoming, code)
+                    : null,
+              ),
+              // Only for the month you're actually in: an insight is a
+              // read on where things stand now, not a history lesson.
+              _slot(
+                6,
+                insights.isNotEmpty ? _insightsStrip(context, insights) : null,
+              ),
+              _slot(
+                7,
+                store.accounts.isNotEmpty
+                    ? _accountsRow(context, store, code)
+                    : null,
+              ),
+              _slot(8, _transactionsCard(context, store, filtered, code)),
+              // Last, not first: captures are a small housekeeping chore,
+              // and putting them above the balance would make every widget
+              // tap feel like an error to be cleared.
+              _slot(
+                9,
+                _isCurrentMonth && store.pendingCaptures.isNotEmpty
+                    ? _CaptureInboxBanner(count: store.pendingCaptures.length)
+                    : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1441,8 +1520,16 @@ class _DashboardViewState extends State<_DashboardView> {
           ),
           Padding(
             padding: const EdgeInsets.only(right: 6, bottom: 6),
-            child: _balanceFace(context, positive, ink, balance, income,
-                expenses, lastMonthNet, code),
+            child: _balanceFace(
+              context,
+              positive,
+              ink,
+              balance,
+              income,
+              expenses,
+              lastMonthNet,
+              code,
+            ),
           ),
         ],
       ),
@@ -1748,7 +1835,8 @@ class _DashboardViewState extends State<_DashboardView> {
         : ExpndColors.green;
     return Semantics(
       button: true,
-      label: '${label[0]}${label.substring(1).toLowerCase()}, $pct percent used. Opens budgets in Plan',
+      label:
+          '${label[0]}${label.substring(1).toLowerCase()}, $pct percent used. Opens budgets in Plan',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         // Reporting the budget invites changing it, and every budget control
@@ -1800,10 +1888,7 @@ class _DashboardViewState extends State<_DashboardView> {
                               ),
                               TextSpan(
                                 text: 'of ${formatCurrency(budget, code)}',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: oc.dimmed,
-                                ),
+                                style: TextStyle(fontSize: 9, color: oc.dimmed),
                               ),
                             ],
                           ),
@@ -2130,21 +2215,8 @@ class _DashboardViewState extends State<_DashboardView> {
   /// they don't tell you what happened. Every line here is arithmetic over
   /// what's already stored, so each one traces to a figure the user can go
   /// and check.
-  Widget? _insightsStrip(BuildContext context, AppStore store, String code) {
+  Widget _insightsStrip(BuildContext context, List<Insight> insights) {
     final oc = context.oc;
-    final settings = context.watch<SettingsStore>();
-    final insights = buildInsights(
-      store,
-      code,
-      monthlyBudget: settings.budgetCycle == 'calendar'
-          ? store.effectiveMonthlyBudget(
-              settings.monthlyBudget,
-              rollover: settings.budgetRollover,
-            )
-          : 0,
-    );
-    if (insights.isEmpty) return null;
-    final shown = insights.take(3).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2161,10 +2233,9 @@ class _DashboardViewState extends State<_DashboardView> {
             ),
           ),
         ),
-        _AiInsightNarrative(insights: shown),
-        for (int i = 0; i < shown.length; i++) ...[
+        for (int i = 0; i < insights.length; i++) ...[
           if (i > 0) const SizedBox(height: 8),
-          _insightCard(oc, shown[i]),
+          _insightCard(oc, insights[i]),
         ],
       ],
     );
@@ -2336,15 +2407,21 @@ class _DashboardViewState extends State<_DashboardView> {
                   semanticLabel: 'All transactions',
                 ),
                 SegmentOption(value: TransactionType.income, label: 'Income'),
-                SegmentOption(
-                  value: TransactionType.expense,
-                  label: 'Expense',
-                ),
+                SegmentOption(value: TransactionType.expense, label: 'Expense'),
               ],
               selected: _filter,
               onSelected: (value) => setState(() => _filter = value),
             ),
           ),
+          // What the selected filter adds up to this month.
+          if (filtered.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FilterTotals(transactions: filtered, currencyCode: code),
+              ),
+            ),
           Container(height: 1, color: oc.border),
           // Filtering (ALL/INCOME/EXPENSE) swaps the row set — animate the
           // height so the card grows/shrinks smoothly instead of snapping.
@@ -2905,7 +2982,9 @@ class TransactionRow extends StatelessWidget {
             // date/account line below get the full width of the row instead
             // of being squeezed beside it.
             final amount = ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
+              constraints: BoxConstraints(
+                maxWidth: constraints.maxWidth * 0.45,
+              ),
               // Scale a very large amount down rather than overflow on a
               // narrow phone at a bumped-up text size.
               child: FittedBox(
@@ -2963,10 +3042,7 @@ class TransactionRow extends StatelessWidget {
                           color: oc.accent,
                         )
                       : custom != null
-                      ? Text(
-                          custom.emoji,
-                          style: const TextStyle(fontSize: 20),
-                        )
+                      ? Text(custom.emoji, style: const TextStyle(fontSize: 20))
                       : Icon(
                           sfIcon(transaction.category.icon),
                           size: 16,

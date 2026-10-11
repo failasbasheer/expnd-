@@ -44,6 +44,19 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/widget_show"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="SHOW"
+            android:contentDescription="Show amounts in EXPND"
+            android:textColor="@color/widget_gold"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/widget_add"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -100,7 +113,9 @@
             android:singleLine="true" />
     </LinearLayout>
 
-    <View
+    <!-- RemoteViews only inflates its allowlisted classes; a plain View
+         crashes the launcher with "Can't load widget". -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="12dp"

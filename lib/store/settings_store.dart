@@ -20,6 +20,30 @@ class SettingsStore extends ChangeNotifier {
   double _d(String k, double d) => _p.getDouble(k) ?? d;
   bool _b(String k, bool d) => _p.getBool(k) ?? d;
 
+  bool get getStartedEligible => _b('getStartedEligible', false);
+  set getStartedEligible(bool value) {
+    _p.setBool('getStartedEligible', value);
+    notifyListeners();
+  }
+
+  bool get getStartedDismissed => _b('getStartedDismissed', false);
+  set getStartedDismissed(bool value) {
+    _p.setBool('getStartedDismissed', value);
+    notifyListeners();
+  }
+
+  bool get walletTipSeen => _b('walletTipSeen', false);
+  set walletTipSeen(bool value) {
+    _p.setBool('walletTipSeen', value);
+    notifyListeners();
+  }
+
+  bool get planTipSeen => _b('planTipSeen', false);
+  set planTipSeen(bool value) {
+    _p.setBool('planTipSeen', value);
+    notifyListeners();
+  }
+
   // appearanceMode: "system" | "light" | "dark"
   // neoPOP is a dark-first design language, so default to dark.
   String get appearanceMode => _s('appearanceMode', 'dark');

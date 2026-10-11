@@ -91,6 +91,10 @@ Everything below is plain arithmetic over the local ledger — no network, no ac
 - **Hide amounts**: the privacy eye masks every amount and every percentage
   (`formatPercent` in `lib/theme/currencies.dart`), so shares and progress can't
   reveal totals.
+- **Getting started**: after first-run wallet setup, a guided screen leads to
+  an expense, monthly budget, and daily reminder. Steps complete from saved
+  data, and Home offers a small resume button until finished or skipped. Home
+  and History transaction filters show totals for the selected rows.
 
 New fields are optional in stored JSON and backups, so older data and backups
 still load.
@@ -103,6 +107,9 @@ budget (never net worth) and bundle the app's Noto Sans; their palette in
 `ExpndWidget.swift` mirrors `ExpndColors`. Dart bridges handle widget updates, capture inbox entries,
 and local reminders. Platform integration changes require simulator or device
 verification in addition to the Dart tests.
+The Android home widget opens at 4×3 cells so its three recent transactions fit;
+its amounts follow the app's hide-amounts setting. When hidden, SHOW opens the
+app and reveals figures after any app lock.
 
 The coach card and category suggestions use Apple's on-device Foundation Models
 (`ios/Runner/AppleIntelligenceBridge.swift`, `lib/services/apple_intelligence.dart`)
