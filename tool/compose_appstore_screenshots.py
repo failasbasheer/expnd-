@@ -24,7 +24,17 @@ measured bottom of the device image in the 1.0 01_dashboard.png.
 
 ASC exposes a 6.5" slot on this listing and its uploader takes only
 1242x2688 or 1284x2778 — the 6.9" set is rendered in case that slot is added.
+
+iPad: EXPND is universal, so the listing also needs a 13" iPad set. Run the
+tour on an iPad Pro 13-inch simulator into a separate folder, then compose:
+
+    SCREENSHOT_DIR=/tmp/expnd-ipad flutter drive ... -d <ipad-pro-13-udid>
+    python3 tool/compose_appstore_screenshots.py --ipad --src /tmp/expnd-ipad
+
+The same fractions hold: an iPad capture has the canvas's own 3:4 aspect, so
+the device lands at the same width share and still clears the bottom edge.
 """
+import argparse
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -38,6 +48,7 @@ RADIUS_F = 44 / 978   # device corner radius as a fraction of device width
 SRC = "screenshots"
 OUT = "appstore_screenshots"
 SIZES = {"6.5in_1284x2778": (1284, 2778), "6.9in_1320x2868": (1320, 2868)}
+IPAD_SIZES = {"ipad_13in_2064x2752": (2064, 2752)}
 
 # (source stem, eyebrow, headline lines, output stem)
 SPECS = [
@@ -106,10 +117,14 @@ def _draw_tracked(draw, text, font, track, cx, ink_top, fill):
 
 
 def compose(shot, eyebrow, headline, out_path, W, H):
-    head_size = round(76 / 1284 * W)
+    # Sized off the phone canvas's proportions: on the squarer iPad canvas a
+    # width-based size crowds the headline into the device frame.
+    head_size = round(76 / 1284 * min(W, H * 1284 / 2778))
     dev_x, dev_w = round(153 / 1284 * W), round(978 / 1284 * W)
     dev_top = round(441 / 2778 * H)
-    head_top, head_adv = round(188 / 2778 * H), round(89 / 2778 * H)
+    # Line advance follows the type size (89 / 76 on the 1.0 canvas), not the
+    # canvas height — on the wider iPad canvas the lines otherwise overlap.
+    head_top, head_adv = round(188 / 2778 * H), round(head_size * 89 / 76)
 
     canvas = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(canvas)
@@ -140,11 +155,18 @@ def compose(shot, eyebrow, headline, out_path, W, H):
 
 
 def main():
-    for label, (W, H) in SIZES.items():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ipad", action="store_true",
+                        help="render the 13-inch iPad set")
+    parser.add_argument("--src", default=SRC,
+                        help="folder of tour captures (default: screenshots)")
+    args = parser.parse_args()
+    sizes = IPAD_SIZES if args.ipad else SIZES
+    for label, (W, H) in sizes.items():
         outdir = os.path.join(OUT, label)
         os.makedirs(outdir, exist_ok=True)
         for src, eyebrow, headline, stem in SPECS:
-            im = Image.open(os.path.join(SRC, f"{src}.png")).convert("RGB")
+            im = Image.open(os.path.join(args.src, f"{src}.png")).convert("RGB")
             if src.startswith("34_"):
                 im = _trim_clipped_row(im)
             out = os.path.join(outdir, f"{stem}.png")

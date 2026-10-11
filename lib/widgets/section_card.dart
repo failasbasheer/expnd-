@@ -12,13 +12,15 @@ Widget sectionCard(ExpndColors oc, String title, Widget child) {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Padding(
-        padding: const EdgeInsets.only(left: 2, bottom: 10),
+        // Inset to the card's text edge, with the tracked caps every other
+        // section label uses; tight caps at the very edge read as cramped.
+        padding: const EdgeInsets.only(left: 14, bottom: 10),
         child: Text(
           title,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.1,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
             color: oc.muted,
           ),
         ),

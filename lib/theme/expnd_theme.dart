@@ -72,6 +72,25 @@ class ExpndSpacing {
       MediaQuery.of(context).padding.bottom + scrollBottom;
 }
 
+/// Frosted "glass" chrome (iOS 26 style) for surfaces that content scrolls
+/// under — shared headers and the tab bar. Set [enabled] to false to restore
+/// the solid surfaces.
+class ExpndGlass {
+  static const bool enabled = true;
+
+  /// Keep geometry unchanged while offering a solid, predictable backdrop for
+  /// people who request increased contrast in their system settings.
+  static bool translucent(BuildContext context) =>
+      enabled && !MediaQuery.highContrastOf(context);
+
+  /// Backdrop blur radius.
+  static const double blur = 24;
+
+  /// Keep muted labels readable even when a bright (dark theme) or dark
+  /// (light theme) card passes directly beneath the frosted chrome.
+  static double tint(Brightness b) => b == Brightness.dark ? 0.82 : 0.93;
+}
+
 /// EXPND keeps a crisp silhouette, while content surfaces have enough radius
 /// to feel finished and touch-friendly. Hard neoPOP geometry is reserved for
 /// the yellow hero and primary actions rather than repeated on every panel.

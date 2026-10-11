@@ -1,9 +1,109 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:expnd/services/insights.dart';
 import 'package:expnd/services/apple_intelligence.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  group('native availability and generation', () {
+    const channel = MethodChannel('com.expnd.app/apple_intelligence');
+    const fact = Insight(
+      title: 'Food is up 34%',
+      detail: r'$670 vs a $500 average',
+      tone: InsightTone.warn,
+      icon: 'fork.knife',
+    );
+    var available = true;
+    var checks = 0;
+    var generations = 0;
+    var response = 'Food is up 34%.';
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      AppleIntelligence.resetAvailabilityForTest();
+      available = true;
+      checks = 0;
+      generations = 0;
+      response = 'Food is up 34%.';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'isAvailable') {
+              checks++;
+              return available;
+            }
+            if (call.method == 'summarizeInsights') {
+              generations++;
+              return response;
+            }
+            return null;
+          });
+    });
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      debugDefaultTargetPlatformOverride = null;
+      AppleIntelligence.resetAvailabilityForTest();
+    });
+    test('unavailable devices cache the check and never generate', () async {
+      available = false;
+      for (var i = 0; i < 3; i++) {
+        final answer = await AppleIntelligence.summarizeInsights([fact]);
+        expect(answer?.source, CoachSource.rules);
+      }
+      expect(checks, 1);
+      expect(generations, 0);
+    });
+    test(
+      'concurrent identical requests share a single model response',
+      () async {
+        final answers = await Future.wait(
+          List.generate(4, (_) => AppleIntelligence.summarizeInsights([fact])),
+        );
+        expect(
+          answers.every((a) => a?.source == CoachSource.appleIntelligence),
+          isTrue,
+        );
+        await AppleIntelligence.summarizeInsights([fact]);
+        expect(checks, 1);
+        expect(generations, 1);
+      },
+    );
+    test(
+      'availability changes replace cached rules with model answers',
+      () async {
+        available = false;
+        expect(
+          (await AppleIntelligence.summarizeInsights([fact]))?.source,
+          CoachSource.rules,
+        );
+        available = true;
+        await AppleIntelligence.refreshAvailability();
+        expect(
+          (await AppleIntelligence.summarizeInsights([fact]))?.source,
+          CoachSource.appleIntelligence,
+        );
+        expect(generations, 1);
+      },
+    );
+    test(
+      'invented figures fall back and do not poison a later retry',
+      () async {
+        response = 'Spend 999 less.';
+        expect(
+          (await AppleIntelligence.summarizeInsights([fact]))?.source,
+          CoachSource.rules,
+        );
+        response = 'Food is up 34%.';
+        expect(
+          (await AppleIntelligence.summarizeInsights([fact]))?.source,
+          CoachSource.appleIntelligence,
+        );
+      },
+    );
+  });
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('coach prompts use stable native wire names', () {
     expect(AiCoachPrompt.values.map((prompt) => prompt.wireName), [
       'summary',
@@ -158,6 +258,88 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('native availability and fallback', () {
+    const channel = MethodChannel('com.expnd.app/apple_intelligence');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var available = false;
+    var availabilityCalls = 0;
+    var generationCalls = 0;
+
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      AppleIntelligence.resetAvailabilityForTest();
+      available = false;
+      availabilityCalls = 0;
+      generationCalls = 0;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        switch (call.method) {
+          case 'isAvailable':
+            availabilityCalls++;
+            return available;
+          case 'summarizeInsights':
+            generationCalls++;
+            return 'Food is up 34%.';
+          case 'suggestCategory':
+            generationCalls++;
+            return 'Transport';
+        }
+        return null;
+      });
+    });
+
+    tearDown(() {
+      messenger.setMockMethodCallHandler(channel, null);
+      debugDefaultTargetPlatformOverride = null;
+      AppleIntelligence.resetAvailabilityForTest();
+    });
+
+    const fact = Insight(
+      title: 'Food is up 34%',
+      detail: r'$670 vs a $500 average',
+      tone: InsightTone.warn,
+      icon: 'fork.knife',
+    );
+
+    test(
+      'unavailable devices skip model generation and show Insights',
+      () async {
+        if (AppleIntelligence.isPreview) return;
+        final answer = await AppleIntelligence.summarizeInsights(const [fact]);
+        expect(answer?.source, CoachSource.rules);
+        expect(answer?.text, isNotEmpty);
+        expect(availabilityCalls, 1);
+        expect(generationCalls, 0);
+      },
+    );
+
+    test('a newly available model replaces the rule result', () async {
+      if (AppleIntelligence.isPreview) return;
+      final first = await AppleIntelligence.summarizeInsights(const [fact]);
+      expect(first?.source, CoachSource.rules);
+
+      available = true;
+      expect(await AppleIntelligence.refreshAvailability(), isTrue);
+      final second = await AppleIntelligence.summarizeInsights(const [fact]);
+      expect(second?.source, CoachSource.appleIntelligence);
+      expect(second?.text, 'Food is up 34%.');
+      expect(generationCalls, 1);
+      expect(availabilityCalls, 2);
+    });
+
+    test('category output remains constrained to the allowed list', () async {
+      if (AppleIntelligence.isPreview) return;
+      available = true;
+      final suggested = await AppleIntelligence.suggestCategory('Uber home', [
+        'Food',
+        'Transport',
+      ]);
+      expect(suggested?.category, 'Transport');
+      expect(suggested?.source, CoachSource.appleIntelligence);
+      expect(generationCalls, 1);
     });
   });
 }

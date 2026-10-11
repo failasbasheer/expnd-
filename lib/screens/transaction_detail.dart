@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/receipts.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
@@ -10,6 +10,7 @@ import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
 import '../widgets/neopop.dart';
 import 'add_transaction.dart';
+import 'reimbursements_view.dart';
 
 // Read-only transaction detail. Tapping a transaction anywhere opens this;
 // the pencil enters edit mode (reusing the add/edit screen) and the trash
@@ -100,6 +101,77 @@ class _TransactionDetailSheet extends StatelessWidget {
                 if (t.note.isNotEmpty) _detailRow(oc, 'NOTE', t.note),
                 if (t.isRecurring)
                   _detailRow(oc, 'REPEATS', t.recurrenceRule.raw),
+                if (t.type == TransactionType.expense) ...[
+                  const SizedBox(height: 8),
+                  // Styled as a card row in the sheet's own type scale; the
+                  // stock ListTile used Material's larger body text and
+                  // looked pasted in.
+                  Semantics(
+                    button: true,
+                    label: 'Refund or reimbursement. Track money expected '
+                        'back for this purchase',
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ReimbursementsView(purchaseId: t.id),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: oc.card,
+                          borderRadius: BorderRadius.circular(
+                            ExpndRadius.card,
+                          ),
+                          border: Border.all(color: oc.border),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.assignment_return_outlined,
+                              size: 18,
+                              color: oc.accent,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Refund or reimbursement',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: oc.text,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Track money expected back',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: oc.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              sfIcon('chevron.right'),
+                              size: 13,
+                              color: oc.dimmed,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (t.tags.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -145,7 +217,7 @@ class _TransactionDetailSheet extends StatelessWidget {
                   const SizedBox(height: 8),
                   _splitCard(context, oc, store, t),
                 ],
-                if (t.photoPath != null && File(t.photoPath!).existsSync()) ...[
+                if (Receipts.fileFor(t.photoPath) != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Receipt',
@@ -160,7 +232,7 @@ class _TransactionDetailSheet extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.file(
-                      File(t.photoPath!),
+                      Receipts.fileFor(t.photoPath)!,
                       width: double.infinity,
                       fit: BoxFit.cover,
                     ),

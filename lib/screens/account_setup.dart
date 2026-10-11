@@ -64,7 +64,7 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
           name: name,
           type: d.type,
           currencyCode: d.currencyCode,
-          balance: double.tryParse(d.balance) ?? 0,
+          balance: parseAmount(d.balance) ?? 0,
         ),
       );
     }
@@ -669,6 +669,11 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
   ];
 
   bool get _isEditing => widget.editing != null;
+
+  /// What the balance field was pre-filled with. A negative balance can't be
+  /// typed, so it pre-fills empty; leaving the field untouched keeps it.
+  String? _balancePrefill;
+
   bool get _isValid => _nameCtrl.text.trim().isNotEmpty;
 
   @override
@@ -680,12 +685,15 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
       _nameCtrl.text = e.name;
       _type = e.type;
       _currencyCode = e.currencyCode;
-      _balanceCtrl.text = e.balance > 0 ? e.balance.toStringAsFixed(2) : '';
+      // Currency precision, so editing never rounds the stored balance
+      // (100.125 KWD) or blocks typing (a JPY "50000.00" fails validation).
+      _balanceCtrl.text = e.balance > 0
+          ? amountInputText(e.balance, e.currencyCode)
+          : '';
+      _balancePrefill = _balanceCtrl.text;
       _colorHex = e.colorHex;
       _cardCtrl.text = e.cardDigits ?? '';
-      _limitCtrl.text = (e.creditLimit ?? 0) > 0
-          ? e.creditLimit!.toStringAsFixed(2)
-          : '';
+      _limitCtrl.text = amountInputText(e.creditLimit ?? 0, e.currencyCode);
     }
   }
 
@@ -701,13 +709,15 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
   void _save() {
     final store = context.read<AppStore>();
     final name = _nameCtrl.text.trim();
-    final bal = double.tryParse(_balanceCtrl.text) ?? 0;
-    Haptics.success();
     final e = widget.editing;
+    final bal = e != null && _balanceCtrl.text == _balancePrefill
+        ? e.balance
+        : parseAmount(_balanceCtrl.text) ?? 0;
+    Haptics.success();
     final digits = _cardCtrl.text.replaceAll(RegExp(r'\D'), '');
     final cardDigits = digits.isEmpty ? null : digits;
     final limit = _type == AccountType.credit
-        ? double.tryParse(_limitCtrl.text)
+        ? parseAmount(_limitCtrl.text)
         : null;
     if (e != null) {
       e.name = name;
@@ -782,8 +792,8 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                   alignment: Alignment.topCenter,
                   child: Builder(
                     builder: (context) {
-                      final bal = double.tryParse(_balanceCtrl.text) ?? 0;
-                      final lim = double.tryParse(_limitCtrl.text) ?? 0;
+                      final bal = parseAmount(_balanceCtrl.text) ?? 0;
+                      final lim = parseAmount(_limitCtrl.text) ?? 0;
                       // Reflect any active EMIs already on the account being edited
                       // so the preview's utilization matches the live wallet card.
                       final emiUsed = _isEditing
@@ -1177,12 +1187,8 @@ class AccountCardContent extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          NeoPopTag(
-                            text: currencyCode,
-                            bg: Colors.white.withValues(alpha: 0.16),
-                            fg: Colors.white,
-                          ),
+                          // No currency tag: the app runs on one currency,
+                          // so naming it on every card only added noise.
                         ],
                       ),
                     ],

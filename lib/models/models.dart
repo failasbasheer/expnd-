@@ -540,6 +540,17 @@ class Transaction {
   /// splits exist — only the UI groups them back together.
   String? splitGroupId;
 
+  /// An income row can be linked to the original purchase it refunds or
+  /// reimburses. The amount remains an ordinary ledger movement.
+  String? relatedPurchaseId;
+  String? relatedPurchaseKind;
+
+  /// Amount expected back for a work or shared purchase. Null means this
+  /// purchase is not being tracked for reimbursement.
+  double? reimbursementExpected;
+  String? reimbursementFrom;
+  DateTime? subscriptionTrialEndDate;
+
   Transaction({
     String? id,
     this.note = '',
@@ -556,6 +567,11 @@ class Transaction {
     this.toAccountId,
     List<String>? tags,
     this.splitGroupId,
+    this.relatedPurchaseId,
+    this.relatedPurchaseKind,
+    this.reimbursementExpected,
+    this.reimbursementFrom,
+    this.subscriptionTrialEndDate,
     this.debtId,
     this.emiId,
   }) : id = id ?? newId(),
@@ -588,6 +604,12 @@ class Transaction {
     'toAccountId': toAccountId,
     'tags': tags,
     'splitGroupId': splitGroupId,
+    'relatedPurchaseId': relatedPurchaseId,
+    'relatedPurchaseKind': relatedPurchaseKind,
+    'reimbursementExpected': reimbursementExpected,
+    'reimbursementFrom': reimbursementFrom,
+    'subscriptionTrialEndDate':
+        subscriptionTrialEndDate?.millisecondsSinceEpoch,
     'debtId': debtId,
     'emiId': emiId,
   };
@@ -610,6 +632,26 @@ class Transaction {
           .map((e) => e.toString())
           .toList(),
       splitGroupId: j['splitGroupId'] as String?,
+      // Optional metadata, absent before refunds/reimbursements and the
+      // subscriptions manager existed. Read leniently: a malformed value
+      // drops that one annotation instead of failing the whole ledger load.
+      relatedPurchaseId: j['relatedPurchaseId'] is String
+          ? j['relatedPurchaseId'] as String
+          : null,
+      relatedPurchaseKind: j['relatedPurchaseKind'] is String
+          ? j['relatedPurchaseKind'] as String
+          : null,
+      reimbursementExpected: j['reimbursementExpected'] is num
+          ? (j['reimbursementExpected'] as num).toDouble()
+          : null,
+      reimbursementFrom: j['reimbursementFrom'] is String
+          ? j['reimbursementFrom'] as String
+          : null,
+      subscriptionTrialEndDate: j['subscriptionTrialEndDate'] is num
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (j['subscriptionTrialEndDate'] as num).toInt(),
+            )
+          : null,
       debtId: j['debtId'] as String?,
       // Absent in data written before installments could be recorded.
       emiId: j['emiId'] as String?,

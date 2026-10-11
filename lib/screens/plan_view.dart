@@ -1,17 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/insights.dart';
+import '../services/cash_flow.dart';
 import '../services/reminders.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/app_header.dart';
 import '../widgets/disclosure_section.dart';
 import '../widgets/context_ai_coach.dart';
@@ -19,7 +20,13 @@ import '../widgets/neopop.dart';
 import '../widgets/money_field.dart';
 import '../widgets/neopop_cards.dart';
 import '../widgets/section_card.dart';
+import '../widgets/segmented_picker.dart';
 import 'settings_view.dart';
+import 'cash_flow_view.dart';
+import 'money_checkup_view.dart';
+import 'subscriptions_view.dart';
+import 'reconciliation_view.dart';
+import 'reimbursements_view.dart';
 
 /// Everything you actively manage about your money: what you meant to spend
 /// (budgets), what you are saving toward (goals), what you owe or are owed
@@ -43,9 +50,7 @@ class _PlanViewState extends State<PlanView> {
   void initState() {
     super.initState();
     final s = context.read<SettingsStore>();
-    _budgetCtrl.text = s.monthlyBudget > 0
-        ? s.monthlyBudget.toStringAsFixed(0)
-        : '';
+    _budgetCtrl.text = amountInputText(s.monthlyBudget, s.currencyCode);
   }
 
   @override
@@ -75,87 +80,153 @@ class _PlanViewState extends State<PlanView> {
 
     return Container(
       color: oc.bg,
-      child: Column(
-        children: [
-          const ExpndHeader(
-            icon: 'target',
-            title: 'PLAN',
-            actions: [SettingsAvatarAction()],
+      child: GlassHeaderLayout(
+        header: const ExpndHeader(
+          icon: 'target',
+          title: 'PLAN',
+          actions: [SettingsAvatarAction()],
+        ),
+        body: (context, top) => ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16 + top,
+            16,
+            ExpndSpacing.scrollBottomUnderTabBar(context),
           ),
-          Expanded(
-            child: ListView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                ExpndSpacing.scrollBottomUnderTabBar(context),
-              ),
-              children: [
-                Text(
-                  'What would you like to plan?',
-                  style: TextStyle(fontSize: 14, color: oc.muted),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final focus in [
-                      'Budgets',
-                      'Savings goals',
-                      'Debts & loans',
-                    ])
-                      ChoiceChip(
-                        label: Text(focus),
-                        selected: _focus == focus,
-                        onSelected: (_) => setState(() => _focus = focus),
-                      ),
-                  ],
-                ),
+          children: [
+            _focusPicker(oc),
+            const SizedBox(height: 20),
+            if (_focus == 'Budgets') ...[
+              _budgetSection(oc, store, settings, symbol),
+              const SizedBox(height: 20),
+              _categoryBudgetsSection(oc, store, symbol),
+            ],
+            if (_focus == 'Savings goals')
+              _goalsSection(oc, store, goals, symbol),
+            if (_focus == 'Debts & loans') ...[
+              _debtsSection(oc, store, symbol),
+              if (store.emis.isNotEmpty) ...[
                 const SizedBox(height: 20),
-                if (_focus == 'Budgets') ...[
-                  _budgetSection(oc, store, settings, symbol),
-                  const SizedBox(height: 20),
-                  _categoryBudgetsSection(oc, store, symbol),
-                ],
-                if (_focus == 'Savings goals')
-                  _goalsSection(oc, store, goals, symbol),
-                if (_focus == 'Debts & loans') ...[
-                  _debtsSection(oc, store, symbol),
-                  if (store.emis.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _loansSection(oc, store, code),
-                  ],
-                ],
-                const SizedBox(height: 20),
-                DisclosureSection(
-                  title: 'Overall progress',
-                  subtitle: 'Lifetime totals and planning insights',
-                  child: Column(
-                    children: [
-                      _statsGrid(
-                        oc,
-                        txns.length,
-                        balance,
-                        totalIncome,
-                        totalExpenses,
-                        symbol,
-                      ),
-                      if (aiFacts.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        ContextAiCoach(facts: aiFacts),
-                      ],
-                    ],
-                  ),
-                ),
+                _loansSection(oc, store, code),
               ],
+            ],
+            if (_focus == 'Tools') ...[_planningTools(context)],
+            const SizedBox(height: 20),
+            DisclosureSection(
+              title: 'Overall progress',
+              icon: 'chart.pie.fill',
+              tint: hexColor('3B82F6'),
+              subtitle: 'Lifetime totals and planning insights',
+              child: Column(
+                children: [
+                  _statsGrid(
+                    oc,
+                    txns.length,
+                    balance,
+                    totalIncome,
+                    totalExpenses,
+                    symbol,
+                  ),
+                  if (aiFacts.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    ContextAiCoach(facts: aiFacts),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  /// One even row of four segments instead of chips that wrapped onto two
+  /// lopsided lines. Short labels keep all four on a 320pt screen; the full
+  /// name is what assistive tech reads.
+  Widget _focusPicker(ExpndColors oc) => SegmentedPicker<String>(
+    options: const [
+      SegmentOption(value: 'Budgets', label: 'Budgets'),
+      SegmentOption(
+        value: 'Savings goals',
+        label: 'Goals',
+        semanticLabel: 'Savings goals',
+      ),
+      SegmentOption(
+        value: 'Debts & loans',
+        label: 'Debts',
+        semanticLabel: 'Debts & loans',
+      ),
+      SegmentOption(value: 'Tools', label: 'Tools'),
+    ],
+    selected: _focus,
+    onSelected: (focus) => setState(() => _focus = focus),
+  );
+
+  Widget _planningTools(BuildContext context) => Column(
+    children: [
+      Card(
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Spendable until payday'),
+              subtitle: const Text(
+                'See cash left after upcoming bills and savings',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showCashFlow(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.shopping_bag_outlined),
+              title: const Text('Plan a purchase'),
+              subtitle: const Text('Preview how a purchase affects your month'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showPurchasePreview(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.fact_check_outlined),
+              title: const Text('Monthly review'),
+              subtitle: const Text(
+                'Review spending, categories, and annual bills',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showMonthlyReview(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.subscriptions_outlined),
+              title: const Text('Subscriptions'),
+              subtitle: const Text('See renewals, trials, and annual costs'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SubscriptionManagerView(),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_outlined),
+              title: const Text('Reconcile an account'),
+              subtitle: const Text('Compare your recorded and bank balances'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ReconciliationView()),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.assignment_return_outlined),
+              title: const Text('Refunds & reimbursements'),
+              subtitle: const Text('Track money you expect back'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ReimbursementsView()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   List<Insight> _planAiFacts(
     AppStore store,
@@ -163,15 +234,27 @@ class _PlanViewState extends State<PlanView> {
     String code,
   ) {
     final facts = <Insight>[];
-    final budget = settings.monthlyBudget;
+    final isCalendar = settings.budgetCycle == 'calendar';
+    final budget = isCalendar
+        ? store.effectiveMonthlyBudget(
+            settings.monthlyBudget,
+            rollover: settings.budgetRollover,
+          )
+        : settings.monthlyBudget;
     if (budget > 0) {
-      final spent = store.spentInMonth(DateTime.now());
+      final spent = isCalendar
+          ? store.spentInMonth(DateTime.now())
+          : budgetSpentInPeriod(
+              store,
+              budgetPeriodFor(settings, DateTime.now()),
+            );
       final remaining = budget - spent;
+      final periodText = isCalendar ? 'this month' : 'this period';
       facts.add(
         Insight(
           title: remaining >= 0
-              ? '${formatCurrency(remaining, code)} left this month'
-              : '${formatCurrency(remaining.abs(), code)} over this month',
+              ? '${formatCurrency(remaining, code)} left $periodText'
+              : '${formatCurrency(remaining.abs(), code)} over $periodText',
           detail:
               '${formatCurrency(spent, code)} spent from ${formatCurrency(budget, code)}',
           tone: remaining >= 0 ? InsightTone.good : InsightTone.warn,
@@ -273,7 +356,7 @@ class _PlanViewState extends State<PlanView> {
       ),
     );
 
-    String money(double v) => '$symbol${_fmt(v.abs())}';
+    String money(double v) => _fmt(v.abs());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -328,10 +411,18 @@ class _PlanViewState extends State<PlanView> {
     // The gauge measures against the effective limit (base + last month's
     // leftover when rollover is on); the input row always edits the base.
     final base = settings.monthlyBudget;
-    final budget = settings.budgetRollover && base > 0
+    final isCalendar = settings.budgetCycle == 'calendar';
+    final period = budgetPeriodFor(settings, now);
+    final budget = isCalendar && settings.budgetRollover && base > 0
         ? store.rolledOverLimit(base, now)
         : base;
-    final monthExpenses = store.spentInMonth(now);
+    final monthExpenses = budgetSpentInPeriod(store, period);
+    final periodLabel = switch (settings.budgetCycle) {
+      'weekly' => 'Weekly',
+      'fortnightly' => 'Fortnightly',
+      'payday' => 'Payday',
+      _ => 'Monthly',
+    };
     final progress = budget > 0
         ? (monthExpenses / budget).clamp(0.0, 1.0)
         : 1.0;
@@ -341,112 +432,105 @@ class _PlanViewState extends State<PlanView> {
         ? oc.accent
         : oc.positive;
 
-    return sectionCard(
-      oc,
-      'Monthly budget',
-      Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Monthly spending limit',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: oc.text,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Set your limit for the whole month. Use 0 for no limit.',
-                  style: TextStyle(fontSize: 12, color: oc.muted),
-                ),
-                const SizedBox(height: 12),
-                MoneyField(
-                  controller: _budgetCtrl,
-                  currencyCode: settings.currencyCode,
-                  label: 'Monthly spending limit',
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(7),
-                  ],
-                  onChanged: (v) =>
-                      settings.monthlyBudget = double.tryParse(v) ?? 0,
-                ),
-              ],
-            ),
+    // Progress first (the answer), then the settings that drive it, as two
+    // separate blocks: the gauge used to sit in a bordered card inside the
+    // settings card, three boxes deep.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (base > 0) ...[
+          NeoPopStatCard(
+            progress: progress,
+            gaugeText: formatPercent((progress * 100).floor()),
+            statusLabel: progress >= 1.0
+                ? 'OVER BUDGET'
+                : progress >= 0.7
+                ? 'WATCH SPENDING'
+                : 'ON TRACK',
+            statusColor: color,
+            title: '${_fmt(monthExpenses)} spent of ${_fmt(budget)}',
+            subtitle:
+                isCalendar && settings.budgetRollover && budget != base
+                ? 'this month · ${_fmt(base)} '
+                      '${budget > base ? '+' : '−'} ${_fmt((budget - base).abs())} rolled over'
+                : '${MaterialLocalizations.of(context).formatMediumDate(period.start)}–${MaterialLocalizations.of(context).formatMediumDate(period.end.subtract(const Duration(days: 1)))}',
+            footerText: progress >= 1.0
+                ? '${periodLabel.toLowerCase()} budget exceeded'
+                : '${_fmt((budget - monthExpenses).clamp(0, budget))} left this period',
           ),
-          sectionDivider(oc),
-          // Rollover: leftover budget carries into next month instead of
-          // evaporating; an overspent month starts the next one smaller.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Row(
-              children: [
-                Icon(sfIcon('repeat'), size: 20, color: oc.accent),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 20),
+        ],
+        sectionCard(
+          oc,
+          '${periodLabel.toUpperCase()} BUDGET',
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Set your limit for each ${periodLabel.toLowerCase()} period. Use 0 for no limit.',
+                      style: TextStyle(fontSize: 12, color: oc.muted),
+                    ),
+                    const SizedBox(height: 12),
+                    MoneyField(
+                      controller: _budgetCtrl,
+                      currencyCode: settings.currencyCode,
+                      label: '$periodLabel spending limit',
+                      // Default currency-aware formatter: digitsOnly turned
+                      // "150.5" into 1505 as it was typed.
+                      onChanged: (v) =>
+                          settings.monthlyBudget = parseAmount(v) ?? 0,
+                    ),
+                  ],
+                ),
+              ),
+              sectionDivider(oc),
+              // Rollover: leftover budget carries into next month instead of
+              // evaporating; an overspent month starts the next one smaller.
+              if (isCalendar)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
                     children: [
-                      Text(
-                        'Roll Over Leftover',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: oc.text,
+                      Icon(sfIcon('repeat'), size: 20, color: oc.accent),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Roll over leftover',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: oc.text,
+                              ),
+                            ),
+                            Text(
+                              'Unused budget carries into next month',
+                              style: TextStyle(fontSize: 11, color: oc.muted),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        'Unused budget carries into next month',
-                        style: TextStyle(fontSize: 11, color: oc.muted),
+                      Switch.adaptive(
+                        value: settings.budgetRollover,
+                        activeTrackColor: ExpndColors.gold,
+                        onChanged: (v) {
+                          Haptics.light();
+                          settings.budgetRollover = v;
+                        },
                       ),
                     ],
                   ),
                 ),
-                Switch.adaptive(
-                  value: settings.budgetRollover,
-                  activeTrackColor: ExpndColors.gold,
-                  onChanged: (v) {
-                    Haptics.light();
-                    settings.budgetRollover = v;
-                  },
-                ),
-              ],
-            ),
+            ],
           ),
-          if (base > 0) ...[
-            sectionDivider(oc),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: NeoPopStatCard(
-                progress: progress,
-                gaugeText: '${(progress * 100).toInt()}%',
-                statusLabel: progress >= 1.0
-                    ? 'over budget'
-                    : progress >= 0.7
-                    ? 'watch spending'
-                    : 'on track',
-                statusColor: color,
-                title:
-                    '$symbol${_fmt(monthExpenses)} spent of $symbol${_fmt(budget)}',
-                subtitle: settings.budgetRollover && budget != base
-                    ? 'this month · $symbol${_fmt(base)} '
-                          '${budget > base ? '+' : '−'} $symbol${_fmt((budget - base).abs())} rolled over'
-                    : 'this month · ${_monthName(now.month)} ${now.year}',
-                minLabel: symbol,
-                maxLabel: '$symbol${_fmt(budget)}',
-                footerText: progress >= 1.0
-                    ? 'monthly budget exceeded'
-                    : '$symbol${_fmt((budget - monthExpenses).clamp(0, budget))} left this month',
-              ),
-            ),
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -493,7 +577,7 @@ class _PlanViewState extends State<PlanView> {
 
     return sectionCard(
       oc,
-      'Category budgets',
+      'CATEGORY BUDGETS',
       Column(
         children: [
           if (budgets.isEmpty)
@@ -626,7 +710,7 @@ class _PlanViewState extends State<PlanView> {
                         ),
                       ),
                       Text(
-                        '$symbol${_fmt(spent)} / $symbol${_fmt(limit)}',
+                        '${_fmt(spent)} / ${_fmt(limit)}',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -836,7 +920,7 @@ class _PlanViewState extends State<PlanView> {
                 ),
               ),
               Text(
-                '$symbol${_fmt(value)}',
+                _fmt(value),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: bold ? FontWeight.w900 : FontWeight.w600,
@@ -872,7 +956,7 @@ class _PlanViewState extends State<PlanView> {
                   ),
                 ),
                 Text(
-                  '$symbol${_fmt(balance)}',
+                  _fmt(balance),
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -978,29 +1062,35 @@ class _PlanViewState extends State<PlanView> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'STILL OWED',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                        color: oc.muted,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'STILL OWED',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          color: oc.muted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      formatCurrency(owed, code),
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: ExpndColors.red,
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          formatCurrency(owed, code),
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: ExpndColors.red,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1017,6 +1107,9 @@ class _PlanViewState extends State<PlanView> {
   Widget _loanRow(ExpndColors oc, AppStore store, Emi e, String code) {
     final acc = store.accountFor(e.accountId);
     final done = !e.isActive;
+    final stackAmount =
+        MediaQuery.sizeOf(context).width < 390 ||
+        MediaQuery.textScalerOf(context).scale(14) > 17;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -1033,7 +1126,7 @@ class _PlanViewState extends State<PlanView> {
               Expanded(
                 child: Text(
                   e.name.trim().isEmpty ? 'Loan' : e.name.trim(),
-                  maxLines: 1,
+                  maxLines: stackAmount ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 14,
@@ -1042,8 +1135,29 @@ class _PlanViewState extends State<PlanView> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
+              if (!stackAmount) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${formatCurrency(e.monthlyAmount, code)}/mo',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: done ? oc.dimmed : oc.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (stackAmount) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
                 '${formatCurrency(e.monthlyAmount, code)}/mo',
                 style: TextStyle(
                   fontSize: 13,
@@ -1051,8 +1165,8 @@ class _PlanViewState extends State<PlanView> {
                   color: done ? oc.dimmed : oc.accent,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             done
@@ -1110,7 +1224,7 @@ class _PlanViewState extends State<PlanView> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$symbol${_fmt(store.owedToMe)}',
+                          _fmt(store.owedToMe),
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -1136,7 +1250,7 @@ class _PlanViewState extends State<PlanView> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '$symbol${_fmt(store.owedByMe)}',
+                        _fmt(store.owedByMe),
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -1274,23 +1388,29 @@ class _PlanViewState extends State<PlanView> {
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '$symbol${_fmt(d.isSettled ? d.amount : outstanding)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: d.isSettled ? oc.dimmed : color,
-                      ),
-                    ),
-                    if (!d.isSettled && repaid > 0)
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
                       Text(
-                        'of $symbol${_fmt(d.amount)}',
-                        style: TextStyle(fontSize: 10, color: oc.dimmed),
+                        _fmt(d.isSettled ? d.amount : outstanding),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: d.isSettled ? oc.dimmed : color,
+                        ),
                       ),
-                  ],
+                      if (!d.isSettled && repaid > 0)
+                        Text(
+                          'of ${_fmt(d.amount)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 10, color: oc.dimmed),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1448,7 +1568,7 @@ class _PlanViewState extends State<PlanView> {
       icon: sfIcon(goal.iconName),
       tagText: '$pct% saved',
       tagColor: Color.alphaBlend(Colors.black.withValues(alpha: 0.30), color),
-      amountText: '$symbol${_fmt(saved)} of $symbol${_fmt(goal.targetAmount)}',
+      amountText: '${_fmt(saved)} of ${_fmt(goal.targetAmount)}',
       progress: progress,
       ctaLabel: progress >= 1.0 ? 'Completed' : 'Set aside',
       onCta: () {
@@ -1581,7 +1701,7 @@ class _PlanViewState extends State<PlanView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Release $symbol${_fmt(goal.allocatedAmount)}?',
+                  'Release ${_fmt(goal.allocatedAmount)}?',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
@@ -1752,19 +1872,15 @@ class _PlanViewState extends State<PlanView> {
                   },
                 ),
                 const SizedBox(height: 20),
-                _goalDetailRow(oc, 'Set aside', '$symbol${_fmt(saved)}'),
-                _goalDetailRow(
-                  oc,
-                  'Target',
-                  '$symbol${_fmt(goal.targetAmount)}',
-                ),
-                _goalDetailRow(oc, 'Still to go', '$symbol${_fmt(remaining)}'),
+                _goalDetailRow(oc, 'Set aside', _fmt(saved)),
+                _goalDetailRow(oc, 'Target', _fmt(goal.targetAmount)),
+                _goalDetailRow(oc, 'Still to go', _fmt(remaining)),
                 _goalDetailRow(oc, 'Held in', holder?.name ?? 'Not linked'),
                 if (holder != null)
                   _goalDetailRow(
                     oc,
                     '${holder.name} balance',
-                    '$symbol${_fmt(store.balanceFor(holder))}',
+                    _fmt(store.balanceFor(holder)),
                   ),
                 _goalDetailRow(oc, 'Started', _goalDate(goal.createdDate)),
                 if (holder != null) ...[
@@ -1852,23 +1968,29 @@ class _PlanViewState extends State<PlanView> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-              color: oc.muted,
+          Expanded(
+            child: Text(
+              label.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                color: oc.muted,
+              ),
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: oc.text,
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              softWrap: true,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: oc.text,
+              ),
             ),
           ),
         ],
@@ -1980,26 +2102,17 @@ class _PlanViewState extends State<PlanView> {
 
   // ── General ──────────────────────────────────────────────────────────────
 
-  String _monthName(int m) => const [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ][m - 1];
-
   // Shared grouped-number formatter (see currencies.dart). Kept as a thin
   // alias so the many local call sites read the same.
 
-  String _fmt(double v) => formatAmount(v);
+  String _fmt(double v) =>
+      formatCurrency(v, context.read<SettingsStore>().currencyCode);
 }
+
+/// [v] in the app currency with its correct precision. Used by the sheets,
+/// which previously appended a 2-decimal figure to the symbol by hand.
+String _money(BuildContext context, double v) =>
+    formatCurrency(v, context.read<SettingsStore>().currencyCode);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Category budget sheet — pick an expense category (when adding) and set a
@@ -2025,7 +2138,10 @@ class _CategoryBudgetSheet extends StatefulWidget {
 class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
   late TransactionCategory? _category = widget.editing;
   late final TextEditingController _limitCtrl = TextEditingController(
-    text: widget.initialLimit > 0 ? widget.initialLimit.toStringAsFixed(0) : '',
+    text: amountInputText(
+      widget.initialLimit,
+      context.read<SettingsStore>().currencyCode,
+    ),
   );
 
   bool get _isEditing => widget.editing != null;
@@ -2038,7 +2154,7 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
 
   void _save() {
     final cat = _category;
-    final limit = double.tryParse(_limitCtrl.text) ?? 0;
+    final limit = parseAmount(_limitCtrl.text) ?? 0;
     if (cat == null || limit <= 0) return;
     widget.store.setBudget(cat, limit);
     Haptics.success();
@@ -2180,16 +2296,13 @@ class _CategoryBudgetSheetState extends State<_CategoryBudgetSheet> {
             NeoPopButton(
               onPressed: _save,
               enabled:
-                  _category != null &&
-                  (double.tryParse(_limitCtrl.text) ?? 0) > 0,
+                  _category != null && (parseAmount(_limitCtrl.text) ?? 0) > 0,
               faceColor:
-                  _category != null &&
-                      (double.tryParse(_limitCtrl.text) ?? 0) > 0
+                  _category != null && (parseAmount(_limitCtrl.text) ?? 0) > 0
                   ? ExpndColors.gold
                   : oc.surface,
               depthColor:
-                  _category != null &&
-                      (double.tryParse(_limitCtrl.text) ?? 0) > 0
+                  _category != null && (parseAmount(_limitCtrl.text) ?? 0) > 0
                   ? ExpndColors.goldDark
                   : oc.edge,
               depth: 4,
@@ -2290,12 +2403,16 @@ class _GoalSheetState extends State<_GoalSheet> {
   bool get _isEditing => widget.editing != null;
   bool get _isValid =>
       _nameCtrl.text.trim().isNotEmpty &&
-      (double.tryParse(_targetCtrl.text) ?? 0) > 0;
+      (parseAmount(_targetCtrl.text) ?? 0) > 0;
 
   /// Savings accounts first — that's where a goal's money normally sits — but
   /// any account can hold one.
   List<Account> get _holders {
-    final all = widget.store.accounts;
+    // Credit cards are excluded: their balance is debt, so it can't fund a
+    // goal (it used to let a goal read "funded" with borrowed money).
+    final all = widget.store.accounts
+        .where((a) => a.type != AccountType.credit)
+        .toList();
     final savings = all.where((a) => a.type == AccountType.savings).toList();
     final rest = all.where((a) => a.type != AccountType.savings).toList();
     return [...savings, ...rest];
@@ -2307,10 +2424,11 @@ class _GoalSheetState extends State<_GoalSheet> {
     final e = widget.editing;
     if (e != null) {
       _nameCtrl.text = e.name;
-      _targetCtrl.text = e.targetAmount.toStringAsFixed(0);
-      if (e.allocatedAmount > 0) {
-        _savedCtrl.text = e.allocatedAmount.toStringAsFixed(0);
-      }
+      final code = context.read<SettingsStore>().currencyCode;
+      // Currency precision: rounding to whole units here was saved back, so
+      // renaming a goal turned 250.40 set aside into 250.
+      _targetCtrl.text = amountInputText(e.targetAmount, code);
+      _savedCtrl.text = amountInputText(e.allocatedAmount, code);
       _icon = e.iconName;
       _colorHex = e.colorHex;
       _accountId = e.accountId;
@@ -2335,7 +2453,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// whatever this goal already claims (editing shouldn't fight its own claim).
   double get _maxSetAside {
     final acc = widget.store.accountFor(_accountId);
-    if (acc == null) return 0;
+    if (acc == null || acc.type == AccountType.credit) return 0;
     final free = widget.store.unallocatedIn(acc);
     final mine =
         widget.editing != null && widget.editing!.accountId == _accountId
@@ -2348,10 +2466,10 @@ class _GoalSheetState extends State<_GoalSheet> {
   void _save() {
     if (!_isValid) return;
     final name = _nameCtrl.text.trim();
-    final target = double.tryParse(_targetCtrl.text) ?? 0;
+    final target = parseAmount(_targetCtrl.text) ?? 0;
     // Two ceilings: the target (progress divides by it) and what the account
     // actually holds — a goal must never claim money that isn't there.
-    final saved = (double.tryParse(_savedCtrl.text) ?? 0)
+    final saved = (parseAmount(_savedCtrl.text) ?? 0)
         .clamp(0.0, target)
         .clamp(0.0, _maxSetAside);
     final e = widget.editing;
@@ -2545,14 +2663,14 @@ class _GoalSheetState extends State<_GoalSheet> {
                 const SizedBox(height: 6),
                 Builder(
                   builder: (_) {
-                    final entered = double.tryParse(_savedCtrl.text) ?? 0;
+                    final entered = parseAmount(_savedCtrl.text) ?? 0;
                     final over = entered > _maxSetAside;
                     final acc = widget.store.accountFor(_accountId);
                     return Text(
                       over
                           ? '${acc?.name ?? 'That account'} only has '
-                                '${widget.symbol}${formatAmount(_maxSetAside)} unclaimed.'
-                          : 'Up to ${widget.symbol}${formatAmount(_maxSetAside)} unclaimed '
+                                '${_money(context, _maxSetAside)} unclaimed.'
+                          : 'Up to ${_money(context, _maxSetAside)} unclaimed '
                                 'in ${acc?.name ?? 'that account'}.',
                       style: TextStyle(
                         fontSize: 11,
@@ -2723,7 +2841,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
     super.dispose();
   }
 
-  double get _entered => double.tryParse(_ctrl.text) ?? 0;
+  double get _entered => parseAmount(_ctrl.text) ?? 0;
   double get _available => widget.store.availableToAllocate(widget.goal);
   bool get _isValid => _entered > 0 && _entered <= _available;
 
@@ -2841,20 +2959,20 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                   error: over,
                   onChanged: (_) => setState(() {}),
                   trailing: TextButton(
-                    onPressed: () => setState(
-                      () => _ctrl.text = _available.toStringAsFixed(
-                        currencyDecimalDigits(
-                          context.read<SettingsStore>().currencyCode,
-                        ),
-                      ),
-                    ),
+                    onPressed: () => setState(() {
+                      final code = context.read<SettingsStore>().currencyCode;
+                      _ctrl.text = amountInputText(
+                        floorToMinor(_available, code),
+                        code,
+                      );
+                    }),
                     child: const Text('Max'),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   over
-                      ? '${holder.name} only has $symbol${formatAmount(_available)} unclaimed.'
+                      ? '${holder.name} only has ${_money(context, _available)} unclaimed.'
                       : 'Nothing moves — this money stays in ${holder.name}.',
                   style: TextStyle(
                     fontSize: 11,
@@ -2936,7 +3054,7 @@ class _ContributeSheetState extends State<_ContributeSheet> {
                 ),
               ),
               Text(
-                '$symbol${_fmt(balance)}',
+                _fmt(balance),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -2971,12 +3089,12 @@ class _ContributeSheetState extends State<_ContributeSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Set aside  $symbol${_fmt(claimed)}',
+                  'Set aside  ${_fmt(claimed)}',
                   style: TextStyle(fontSize: 11, color: oc.muted),
                 ),
               ),
               Text(
-                'Unclaimed  $symbol${_fmt(free < 0 ? 0 : free)}',
+                'Unclaimed  ${_fmt(free < 0 ? 0 : free)}',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -2990,7 +3108,8 @@ class _ContributeSheetState extends State<_ContributeSheet> {
     );
   }
 
-  String _fmt(double v) => formatAmount(v);
+  String _fmt(double v) =>
+      formatCurrency(v, context.read<SettingsStore>().currencyCode);
 }
 
 /// Records money lent out or borrowed.
@@ -3033,7 +3152,7 @@ class _DebtSheetState extends State<_DebtSheet> {
     super.dispose();
   }
 
-  double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
+  double get _amount => parseAmount(_amountCtrl.text) ?? 0;
   bool get _isValid => _personCtrl.text.trim().isNotEmpty && _amount > 0;
 
   void _save() {
@@ -3046,7 +3165,7 @@ class _DebtSheetState extends State<_DebtSheet> {
       dueDate: _dueDate,
       note: _noteCtrl.text.trim(),
       accountId: _accountId,
-      monthlyRepayment: double.tryParse(_planCtrl.text),
+      monthlyRepayment: parseAmount(_planCtrl.text),
     );
     store.addDebt(debt);
 
@@ -3401,7 +3520,9 @@ class _DebtSheetState extends State<_DebtSheet> {
         keyboardType: numeric
             ? const TextInputType.numberWithOptions(decimal: true)
             : null,
-        inputFormatters: numeric ? amountInputFormatters : null,
+        inputFormatters: numeric
+            ? amountFormattersFor(context.read<SettingsStore>().currencyCode)
+            : null,
         textCapitalization: numeric
             ? TextCapitalization.none
             : TextCapitalization.words,
@@ -3459,7 +3580,7 @@ class _RepaySheetState extends State<_RepaySheet> {
     super.dispose();
   }
 
-  double get _amount => double.tryParse(_ctrl.text) ?? 0;
+  double get _amount => parseAmount(_ctrl.text) ?? 0;
   double get _outstanding => widget.store.outstandingOn(widget.debt);
   bool get _isValid => _amount > 0 && _amount <= _outstanding + 0.005;
 
@@ -3507,7 +3628,7 @@ class _RepaySheetState extends State<_RepaySheet> {
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  '${d.person} · ${widget.symbol}${formatAmount(_outstanding)} outstanding',
+                  '${d.person} · ${_money(context, _outstanding)} outstanding',
                   style: TextStyle(fontSize: 12, color: oc.muted),
                 ),
               ),
@@ -3520,20 +3641,20 @@ class _RepaySheetState extends State<_RepaySheet> {
                 error: over,
                 onChanged: (_) => setState(() {}),
                 trailing: TextButton(
-                  onPressed: () => setState(
-                    () => _ctrl.text = _outstanding.toStringAsFixed(
-                      currencyDecimalDigits(
-                        context.read<SettingsStore>().currencyCode,
-                      ),
-                    ),
-                  ),
+                  onPressed: () => setState(() {
+                    final code = context.read<SettingsStore>().currencyCode;
+                    _ctrl.text = amountInputText(
+                      floorToMinor(_outstanding, code),
+                      code,
+                    );
+                  }),
                   child: const Text('Full amount'),
                 ),
               ),
               if (over) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Only ${widget.symbol}${formatAmount(_outstanding)} is outstanding.',
+                  'Only ${_money(context, _outstanding)} is outstanding.',
                   style: TextStyle(fontSize: 11, color: ExpndColors.red),
                 ),
               ],

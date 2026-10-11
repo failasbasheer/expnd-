@@ -13,7 +13,7 @@ import 'package:expnd/models/models.dart';
 import 'package:expnd/screens/home_shell.dart';
 import 'package:expnd/store/app_store.dart';
 import 'package:expnd/store/settings_store.dart';
-import 'package:expnd/theme/sf_icons.dart';
+import 'package:expnd/theme/expnd_theme.dart';
 import 'package:expnd/widgets/neopop.dart';
 
 void main() {
@@ -55,19 +55,20 @@ void main() {
         ],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(brightness: Brightness.dark, useMaterial3: true),
+          // The screens read their palette from the app theme's extension
+          // (context.oc), so use the real one rather than a bare ThemeData.
+          theme: buildExpndTheme(Brightness.dark),
           home: const HomeShell(),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    debugPrint(
-      '[toast-test] plus icons found: '
-      '${find.byIcon(sfIcon('plus')).evaluate().length}',
-    );
-    // Open the add-transaction screen from the tab bar's plus button.
-    await tester.tap(find.byIcon(sfIcon('plus')).first);
+    // Open the add-transaction screen from the tab bar's add button (a
+    // NeoPopButton labelled for accessibility, with a matching tooltip).
+    final addButton = find.byTooltip('Add transaction');
+    expect(addButton, findsOneWidget);
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
     debugPrint(
       '[toast-test] on add screen: '
@@ -85,7 +86,7 @@ void main() {
     // The submit button lives at the bottom of a lazy ListView, so scroll it
     // into view before tapping (target the button widget, not the identically
     // labelled header).
-    final submit = find.widgetWithText(NeoPopButton, 'ADD TRANSACTION');
+    final submit = find.widgetWithText(NeoPopButton, 'Add transaction');
     await tester.scrollUntilVisible(
       submit,
       300,

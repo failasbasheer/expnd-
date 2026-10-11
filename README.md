@@ -58,6 +58,8 @@ lib/
     analytics_view.dart     trend / bar / donut / top-categories charts
     plan_view.dart          budgets, savings goals, debts and loans
     settings_view.dart      profile, grouped preferences, import/export
+  services/                 backup, reminders, insights, cash flow, subscriptions,
+                            reconciliation, receipt OCR, widget/capture bridges
 ```
 
 ## Ported features
@@ -65,6 +67,33 @@ Transactions (income/expense/transfer), custom categories, accounts + auto-balan
 recurring transactions, budgets, savings goals, analytics, history search/filter,
 biometric lock, receipt photos, clipboard "scan", CSV import/export, light/dark theming,
 multi-currency, haptics.
+
+## Money tools
+
+Everything below is plain arithmetic over the local ledger — no network, no account.
+
+- **Spendable until payday**: what's safe to spend before the next payday, after
+  upcoming bills. Budgets can follow the calendar month, a monthly payday, or a
+  weekly/fortnightly pay cycle (`lib/services/cash_flow.dart`).
+- **Plan a purchase**: previews what a purchase would leave after upcoming
+  bills, goal savings and the budget — nothing is recorded; **Monthly review** recaps last month
+  and exports it as CSV through the share sheet (`lib/services/money_checkup.dart`).
+- **Subscriptions**: recurring expenses tagged `subscription`, with annual cost,
+  trial end reminders, and conservative suggestions from repeat charges
+  (`lib/services/subscriptions.dart`).
+- **Reconcile an account**: compare a statement balance with the ledger as of a
+  date and spot likely duplicates; it never edits balances
+  (`lib/services/reconciliation.dart`).
+- **Refunds & reimbursements**: link incoming money to the original purchase and
+  track what's still owed back. Returns are ordinary income rows.
+- **Receipt scanning**: on-device text recognition pre-fills amount, merchant and
+  date from a receipt photo (`lib/services/receipt_ocr.dart`).
+- **Hide amounts**: the privacy eye masks every amount and every percentage
+  (`formatPercent` in `lib/theme/currencies.dart`), so shares and progress can't
+  reveal totals.
+
+New fields are optional in stored JSON and backups, so older data and backups
+still load.
 
 ## Platform integrations
 
@@ -77,10 +106,25 @@ verification in addition to the Dart tests.
 
 The coach card and category suggestions use Apple's on-device Foundation Models
 (`ios/Runner/AppleIntelligenceBridge.swift`, `lib/services/apple_intelligence.dart`)
-when Apple Intelligence is available (iOS 26+, iPhone 15 Pro or newer, enabled,
+when Apple Intelligence is available (iOS 26+, eligible hardware such as iPhone 15 Pro/Pro Max or iPhone 16 and later, enabled,
 model downloaded, supported language). Other devices, including iPhone 15 and
 Android, get the same card labelled "Insights" with rule-based copy built from
-the verified facts. The framework is weak-linked, so iOS 17–25 still launch.
+the verified facts. Availability is cached and refreshed on resume; identical coach
+requests share a bounded, memory-only cache. Failed or ungrounded responses fall
+back to calculated insights. The framework is weak-linked, so iOS 17–25 still launch.
+
+Receipt scanning runs on-device over the `com.expnd.app/receipt_ocr` channel:
+Apple Vision on iOS (`ios/Runner/ReceiptOcrBridge.swift`) and bundled ML Kit
+text recognition on Android (`MainActivity.kt`), so no model download or network
+access is needed. Receipt photos are stored by file name under the app's
+Documents folder (`lib/services/receipts.dart`) so they survive container moves.
+
+## Brand assets
+
+The app icon, adaptive/monochrome Android layers, iOS dark/tinted icons, splash and
+in-app `E` mark are drawn from one geometry by `tool/generate_brand_assets.py`
+(`python3 tool/generate_brand_assets.py`, needs Pillow). Follow the regeneration
+order in `assets/icon/README.md`, since `flutter_launcher_icons` overwrites some variants.
 
 ## UI conventions
 
@@ -89,6 +133,8 @@ and `lib/theme/expnd_theme.dart`. Page headers use text titles, aligned 44-point
 actions, and a neutral profile avatar. `ExpndPageBar` gives pushed entry screens
 the same title style. Keep the labeled Add action within the bottom navigation;
 reserve strong yellow fills for primary content and submission actions.
+Glass headers blur only after scrolling, use opaque surfaces in high-contrast mode,
+and suppress transitions when reduced motion is enabled.
 Use `MoneyField` for currency-aware amount entry.
 Optional transaction controls and settings groups use `DisclosureSection` to keep
 common tasks short while retaining advanced controls. History provides search,

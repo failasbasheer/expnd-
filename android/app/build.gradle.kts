@@ -75,6 +75,8 @@ flutter {
 dependencies {
     // Enables core library desugaring required by flutter_local_notifications.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Bundled model keeps receipt scanning available without a network request.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
 
 // integration_test is intentionally a dev dependency, but older Flutter

@@ -41,6 +41,34 @@ Future<void> _pump(WidgetTester tester, Widget screen, AppStore store) async {
 }
 
 void main() {
+  testWidgets('Plan shows one currency symbol per amount', (tester) async {
+    final store = AppStore(_FakeBox());
+    store.addTransaction(
+      Transaction(
+        note: 'Lunch',
+        amount: 100,
+        category: TransactionCategory.food,
+        type: TransactionType.expense,
+        date: DateTime.now(),
+      ),
+    );
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.create();
+    settings.monthlyBudget = 3000;
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider.value(value: settings),
+        ],
+        child: const MaterialApp(home: Scaffold(body: PlanView())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining(r'$$'), findsNothing);
+    expect(find.textContaining(r'$100.00 spent of $3,000.00'), findsOneWidget);
+  });
+
   testWidgets('recurring rules stay reachable when nothing is due in 30 days', (
     tester,
   ) async {
@@ -131,19 +159,78 @@ void main() {
     tester,
   ) async {
     await _pump(tester, const PlanView(), AppStore(_FakeBox()));
-    expect(find.text('Category budgets'), findsOneWidget);
+    expect(find.text('CATEGORY BUDGETS'), findsOneWidget);
     final budget = find.byType(TextField).first;
     await tester.enterText(budget, '2400');
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Savings goals'));
+    await tester.tap(find.bySemanticsLabel('Savings goals'));
     await tester.pumpAndSettle();
-    expect(find.text('Category budgets'), findsNothing);
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Debts & loans'));
+    expect(find.text('CATEGORY BUDGETS'), findsNothing);
+    await tester.tap(find.bySemanticsLabel('Debts & loans'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Budgets'));
+    await tester.tap(find.bySemanticsLabel('Budgets'));
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       '2400',
     );
+  });
+
+  testWidgets('re-enabling a series starts it after today, without backfill', (
+    tester,
+  ) async {
+    final store = AppStore(_FakeBox());
+    final now = DateTime.now();
+    final original = Transaction(
+      note: 'Gym',
+      amount: 40,
+      category: TransactionCategory.subscription,
+      type: TransactionType.expense,
+      date: now.subtract(const Duration(days: 120)),
+    );
+    // A due date left behind from when the series was last switched on.
+    original.nextDueDate = now.subtract(const Duration(days: 90));
+    store.addTransaction(original);
+    await _pump(tester, AddTransactionScreen(editing: original), store);
+    await tester.ensureVisible(find.text('More options'));
+    await tester.tap(find.text('More options'));
+    await tester.pumpAndSettle();
+    final repeat = find.byType(Switch).last;
+    await tester.ensureVisible(repeat);
+    await tester.tap(repeat);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    final saved = store.transactions.single;
+    expect(saved.isRecurring, isTrue);
+    expect(saved.nextDueDate!.isAfter(now), isTrue);
+    expect(store.generateRecurring(), isEmpty);
+  });
+
+  testWidgets('editing a skipped-ahead series never pulls its due date back', (
+    tester,
+  ) async {
+    final store = AppStore(_FakeBox());
+    final now = DateTime.now();
+    final original = Transaction(
+      note: 'Rent',
+      amount: 900,
+      category: TransactionCategory.rent,
+      type: TransactionType.expense,
+      date: now,
+      isRecurring: true,
+    );
+    // "Skip" twice moved the series well past its natural next date.
+    final skippedTo = now.add(const Duration(days: 75));
+    original.nextDueDate = skippedTo;
+    store.addTransaction(original);
+    await _pump(tester, AddTransactionScreen(editing: original), store);
+    await tester.enterText(find.byType(TextField).first, '950');
+    // Change the rule so the schedule is recomputed.
+    original.recurrenceRule = RecurrenceRule.weekly;
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(store.transactions.single.nextDueDate, skippedTo);
   });
 }

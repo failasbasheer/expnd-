@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import 'alerts.dart';
+import 'cash_flow.dart';
 import 'insights.dart';
 
 /// Every notification EXPND sends — the nightly nudge, bill warnings, the
@@ -116,6 +117,15 @@ class Reminders {
     final t = settings.reminderTime;
     final tone = reminderToneFromString(settings.reminderTone);
     final code = settings.currencyCode;
+    final period = settings.budgetCycle == 'calendar'
+        ? null
+        : budgetPeriodFor(settings, DateTime.now());
+    final budget = period == null
+        ? store.effectiveMonthlyBudget(
+            settings.monthlyBudget,
+            rollover: settings.budgetRollover,
+          )
+        : settings.monthlyBudget;
 
     // ── Nightly nudge ─────────────────────────────────────────────────────────
     if (settings.dailyReminder) {
@@ -127,7 +137,7 @@ class Reminders {
         bodies: buildReminderBodies(
           store,
           code,
-          monthlyBudget: settings.monthlyBudget,
+          monthlyBudget: period == null ? budget : 0,
           count: dailyQueueDays,
           customMessage: settings.reminderCustomMessage,
           mode: settings.reminderMessageMode,
@@ -140,15 +150,17 @@ class Reminders {
 
     // ── Bills due soon ────────────────────────────────────────────────────────
     if (settings.alertBillsDue) {
-      await scheduleBillAlerts(
-        dueSoonAlerts(
+      final dueAlerts = [
+        ...dueSoonAlerts(
           store,
           code,
           hour: t.hour,
           minute: t.minute,
           cap: billMaxCount,
         ),
-      );
+        ...trialEndAlerts(store.transactions, hour: t.hour, minute: t.minute),
+      ]..sort((a, b) => a.fireAt.compareTo(b.fireAt));
+      await scheduleBillAlerts(dueAlerts.take(billMaxCount).toList());
     } else {
       await _cancelRange(_billBaseId, billMaxCount);
     }
@@ -163,7 +175,7 @@ class Reminders {
         body: buildWeeklySummaryBody(
           store,
           code,
-          monthlyBudget: settings.monthlyBudget,
+          monthlyBudget: period == null ? budget : 0,
         ),
       );
     } else {
@@ -175,12 +187,16 @@ class Reminders {
       final alert = overBudgetAlert(
         store,
         code,
-        monthlyBudget: settings.monthlyBudget,
+        monthlyBudget: budget,
+        period: period,
         lastAlertedMonth: settings.lastOverBudgetAlertMonth,
       );
       if (alert != null) {
         await showNow(_overBudgetId, alert.title, alert.body);
-        settings.lastOverBudgetAlertMonth = yyyymm(DateTime.now());
+        settings.lastOverBudgetAlertMonth = budgetAlertKey(
+          DateTime.now(),
+          period: period,
+        );
       }
     }
 

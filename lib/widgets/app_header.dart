@@ -34,7 +34,8 @@ class ExpndHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final oc = context.oc;
     return ColoredBox(
-      color: oc.bg,
+      // In glass mode the header sits on GlassHeaderLayout's frosted plate.
+      color: ExpndGlass.enabled ? Colors.transparent : oc.bg,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -92,7 +93,11 @@ class ExpndHeaderMetrics {
   static const double radius = 12;
 }
 
-/// The shared page-title style.
+/// The shared page-title style: NeoPOP heavy, letter-spaced caps, as in 1.0.
+///
+/// Callers pass the plain title ('Wallet'); it is upper-cased for display and
+/// read to assistive tech in its natural case, so VoiceOver says the word
+/// instead of spelling out capitals.
 class HeaderTitle extends StatelessWidget {
   final String title;
   const HeaderTitle({super.key, required this.title});
@@ -100,19 +105,21 @@ class HeaderTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
-    final displayTitle = title == 'EXPND' || title.isEmpty
+    final spoken = title == 'EXPND' || title.isEmpty
         ? title
         : '${title[0]}${title.substring(1).toLowerCase()}';
     return Semantics(
       header: true,
+      label: spoken,
+      excludeSemantics: true,
       child: Text(
-        displayTitle,
+        title.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.5,
+          fontSize: 17,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2,
           color: oc.text,
         ),
       ),
@@ -158,29 +165,46 @@ class HeaderAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final oc = context.oc;
     const size = ExpndHeaderMetrics.action;
+    // Every header action wears the same 36pt disc inside its 44pt tap box —
+    // the eye, the add button, close and the avatar used to be three different
+    // shapes in one corner. The primary action keeps a gold tint.
+    final disc = Center(
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: primary ? oc.accent.withValues(alpha: 0.14) : oc.card,
+          border: Border.all(
+            color: primary ? oc.accent.withValues(alpha: 0.35) : oc.border,
+          ),
+        ),
+      ),
+    );
     Widget face = SizedBox(
       width: size,
       height: size,
-      child:
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          disc,
           child ??
-          IconButton(
-            onPressed: onPressed,
-            style: IconButton.styleFrom(
-              foregroundColor: primary ? oc.accent : oc.muted,
-              backgroundColor: primary
-                  ? oc.accent.withValues(alpha: 0.10)
-                  : Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              IconButton(
+                onPressed: onPressed,
+                style: IconButton.styleFrom(
+                  foregroundColor: primary ? oc.accent : oc.muted,
+                  backgroundColor: Colors.transparent,
+                  shape: const CircleBorder(),
+                  padding: EdgeInsets.zero,
+                ),
+                icon: Icon(switch (icon) {
+                  'plus' => Icons.add_rounded,
+                  'xmark' => Icons.close_rounded,
+                  _ => sfIcon(icon!),
+                }, size: 20),
               ),
-              padding: EdgeInsets.zero,
-            ),
-            icon: Icon(switch (icon) {
-              'plus' => Icons.add_rounded,
-              'xmark' => Icons.close_rounded,
-              _ => sfIcon(icon!),
-            }, size: 22),
-          ),
+        ],
+      ),
     );
 
     if (badge) {
@@ -235,3 +259,25 @@ class ExpndPageBar extends StatelessWidget implements PreferredSizeWidget {
     ],
   );
 }
+
+/// [ExpndPageBar] for a pushed screen, ending in a close action. Focus is
+/// dropped first so the keyboard does not flash over the previous route.
+PreferredSizeWidget closablePageBar(
+  BuildContext context,
+  String title, {
+  List<Widget> actions = const [],
+}) => ExpndPageBar(
+  title: title,
+  actions: [
+    ...actions,
+    if (Navigator.of(context).canPop())
+      HeaderAction(
+        icon: 'xmark',
+        onPressed: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+          Navigator.of(context).maybePop();
+        },
+        semanticLabel: 'Close ${title.toLowerCase()}',
+      ),
+  ],
+);

@@ -62,7 +62,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     super.dispose();
   }
 
-  double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
+  double get _amount => parseAmount(_amountCtrl.text) ?? 0;
 
   bool get _isValid => _amount > 0;
 
@@ -225,7 +225,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
         ),
         const SizedBox(height: 10),
         GridView.count(
-          crossAxisCount: 4,
+          crossAxisCount: MediaQuery.sizeOf(context).width > 520 ? 5 : 4,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 8,

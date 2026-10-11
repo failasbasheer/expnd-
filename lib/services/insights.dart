@@ -60,6 +60,29 @@ List<Insight> buildInsights(
 }) {
   final now = from ?? DateTime.now();
   final out = <Insight>[];
+  final endOfToday = DateTime(now.year, now.month, now.day + 1);
+  final txns = store.transactions
+      .where((t) => t.date.isBefore(endOfToday))
+      .toList();
+  double spentThrough(DateTime month, {TransactionCategory? category}) {
+    final lastDay = DateTime(month.year, month.month + 1, 0).day;
+    final cutoff = DateTime(
+      month.year,
+      month.month,
+      now.day.clamp(1, lastDay) + 1,
+    );
+    return txns
+        .where(
+          (t) =>
+              t.type == TransactionType.expense &&
+              t.date.year == month.year &&
+              t.date.month == month.month &&
+              t.date.isBefore(cutoff) &&
+              (category == null ||
+                  (t.customCategoryId == null && t.category == category)),
+        )
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
 
   String money(double v) => formatCurrency(v, code);
 
@@ -67,7 +90,7 @@ List<Insight> buildInsights(
   // "On track" needs the month's shape, not just its total: being 60% through
   // the budget on the 5th is very different from the 25th.
   if (monthlyBudget > 0) {
-    final spent = store.spentInMonth(now);
+    final spent = spentThrough(now);
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
     final elapsed = now.day / daysInMonth;
     final projected = elapsed > 0 ? spent / elapsed : spent;
@@ -77,18 +100,18 @@ List<Insight> buildInsights(
       out.add(
         Insight(
           title: 'Over budget by ${money(spent - monthlyBudget)}',
-          detail: 'with ${daysInMonth - now.day} days still to go',
+          detail: 'With ${daysInMonth - now.day} days still to go',
           tone: InsightTone.warn,
           icon: 'exclamationmark.triangle.fill',
           weight: 100,
         ),
       );
-    } else if (diff < 0) {
+    } else if (now.day >= 10 && diff < 0) {
       out.add(
         Insight(
           title: 'On pace to overspend',
           detail:
-              'heading for ${money(projected)} against ${money(monthlyBudget)}',
+              'Heading for ${money(projected)} against ${money(monthlyBudget)}',
           tone: InsightTone.warn,
           icon: 'chart.line.uptrend.xyaxis',
           weight: 90,
@@ -113,14 +136,14 @@ List<Insight> buildInsights(
   // other categories, because "you spend more on rent than coffee" is not news.
   final categoryShifts = <Insight>[];
   for (final cat in TransactionCategory.values) {
-    final thisMonth = store.spentInMonth(now, category: cat);
+    final thisMonth = spentThrough(now, category: cat);
     if (thisMonth <= 0) continue;
 
     var total = 0.0;
     var months = 0;
     for (var i = 1; i <= 3; i++) {
       final m = DateTime(now.year, now.month - i);
-      total += store.spentInMonth(m, category: cat);
+      total += spentThrough(m, category: cat);
       months++;
     }
     if (months == 0) continue;
@@ -136,7 +159,8 @@ List<Insight> buildInsights(
     categoryShifts.add(
       Insight(
         title: '${cat.raw} is ${change > 0 ? 'up' : 'down'} $pct%',
-        detail: '${money(thisMonth)} vs a ${money(average)} average',
+        detail:
+            '${money(thisMonth)} vs a ${money(average)} average by this point in the month',
         tone: change > 0 ? InsightTone.warn : InsightTone.good,
         icon: cat.icon,
         // Bigger swings, and rises over falls, are the ones worth the space.
@@ -184,7 +208,7 @@ List<Insight> buildInsights(
       out.add(
         Insight(
           title: '${cat.raw} under budget $streak months running',
-          detail: 'holding at ${money(b.limit)} a month',
+          detail: 'Holding at ${money(b.limit)} a month',
           tone: InsightTone.good,
           icon: 'checkmark.circle.fill',
           weight: 50,
@@ -196,14 +220,13 @@ List<Insight> buildInsights(
   // ── A stale ledger ────────────────────────────────────────────────────────
   // The whole app depends on the user typing things in, so a gap is the most
   // useful thing it can point out.
-  final txns = store.transactions;
   if (txns.isNotEmpty) {
     final gap = now.difference(txns.first.date).inDays;
     if (gap >= 3) {
       out.add(
         Insight(
           title: 'Nothing logged in $gap days',
-          detail: 'the longer the gap, the harder it is to remember',
+          detail: 'The longer the gap, the harder it is to remember',
           tone: InsightTone.warn,
           icon: 'clock.fill',
           weight: 80,

@@ -1,6 +1,18 @@
 # App launcher icons
 
-Place two PNG files here, then generate all platform sizes.
+The mark (a flat NeoPOP "E": solid gold face over a solid gold-dark edge) is
+drawn from one geometry by `tool/generate_brand_assets.py`, which writes both
+source PNGs below plus the launch images, the in-app brand image, and the
+iOS dark/tinted and Android monochrome variants. The Flutter splash draws the
+same geometry in `ExpndMarkPainter` (`lib/screens/splash_screen.dart`) —
+change both together.
+
+```sh
+python3 tool/generate_brand_assets.py   # needs Pillow
+```
+
+Then generate the platform sizes as below, restore the two hand-maintained
+files, and run the script once more so its variants sit on top.
 
 ## Required files
 

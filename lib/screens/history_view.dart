@@ -1,17 +1,19 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/receipts.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/neopop.dart';
 import '../widgets/tag_manager.dart';
+import '../widgets/segmented_picker.dart';
 import 'add_transaction.dart';
 import 'transaction_detail.dart';
 
@@ -23,19 +25,30 @@ class HistoryView extends StatefulWidget {
   final DateTime? initialStartDate;
   final DateTime? initialEndDate;
 
-  const HistoryView({super.key, this.initialStartDate, this.initialEndDate});
+  /// Opens already filtered to one account (Wallet's "See all").
+  final Account? initialAccount;
+
+  const HistoryView({
+    super.key,
+    this.initialStartDate,
+    this.initialEndDate,
+    this.initialAccount,
+  });
 
   @override
   State<HistoryView> createState() => _HistoryViewState();
 }
 
 class _HistoryViewState extends State<HistoryView> {
+  /// Height of the glass header the lists scroll under (0 when solid).
+  double _listTop = 0;
+
   final _searchCtrl = TextEditingController();
   String _search = '';
   TransactionType? _typeFilter;
   TransactionCategory? _categoryFilter;
   String? _customCategoryFilter;
-  Account? _accountFilter;
+  late Account? _accountFilter = widget.initialAccount;
   String? _tagFilter;
   late DateTime? _startDate = widget.initialStartDate;
   late DateTime? _endDate = widget.initialEndDate;
@@ -163,41 +176,51 @@ class _HistoryViewState extends State<HistoryView> {
 
     return Container(
       color: oc.bg,
-      child: Column(
-        children: [
-          FadeSlideIn(child: _titleBar(oc)),
-          if (allEmpty)
-            Expanded(child: _emptyState(oc))
-          else ...[
-            if (_selectMode)
-              _selectionBar(oc, store)
-            else
-              FadeSlideIn(
-                index: 1,
-                child: _filterArea(oc, store, accounts, filtered.length),
-              ),
-            Container(height: 1, color: oc.border),
-            Expanded(
-              child: filtered.isEmpty
-                  ? _noResults(oc)
-                  : (sortMode == 'amountDesc' || sortMode == 'amountAsc')
-                  ? _flatList(
-                      oc,
-                      store,
-                      filtered,
-                      code,
-                      descending: sortMode == 'amountDesc',
-                    )
-                  : _groupedList(
-                      oc,
-                      store,
-                      filtered,
-                      code,
-                      descending: sortMode != 'oldest',
-                    ),
-            ),
+      child: GlassHeaderLayout(
+        header: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FadeSlideIn(child: _titleBar(oc)),
+            if (!allEmpty) ...[
+              if (_selectMode)
+                _selectionBar(oc, store)
+              else
+                FadeSlideIn(
+                  index: 1,
+                  child: _filterArea(oc, store, accounts, filtered.length),
+                ),
+              if (!ExpndGlass.enabled) Container(height: 1, color: oc.border),
+            ],
           ],
-        ],
+        ),
+        body: (context, top) {
+          _listTop = top;
+          return allEmpty
+              ? Padding(
+                  padding: EdgeInsets.only(top: top),
+                  child: _emptyState(oc),
+                )
+              : filtered.isEmpty
+              ? Padding(
+                  padding: EdgeInsets.only(top: top),
+                  child: _noResults(oc),
+                )
+              : (sortMode == 'amountDesc' || sortMode == 'amountAsc')
+              ? _flatList(
+                  oc,
+                  store,
+                  filtered,
+                  code,
+                  descending: sortMode == 'amountDesc',
+                )
+              : _groupedList(
+                  oc,
+                  store,
+                  filtered,
+                  code,
+                  descending: sortMode != 'oldest',
+                );
+        },
       ),
     );
   }
@@ -218,22 +241,49 @@ class _HistoryViewState extends State<HistoryView> {
     );
   }
 
+  /// A pill on the same 36pt height as the header discs, so it reads as a
+  /// control rather than loose text. The label stays: it says the current sort.
   Widget _sortButton(ExpndColors oc) {
     final mode = context.watch<SettingsStore>().historySortMode;
-    return TextButton.icon(
-      onPressed: _openSortSheet,
-      icon: Icon(Icons.swap_vert_rounded, size: 19, color: oc.muted),
-      label: Text(
-        _sortLabel(mode),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: oc.muted,
+    final label = _sortLabel(mode);
+    return Semantics(
+      button: true,
+      label: 'Sort, currently $label',
+      excludeSemantics: true,
+      onTap: _openSortSheet,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _openSortSheet,
+        child: SizedBox(
+          height: ExpndHeaderMetrics.action,
+          child: Center(
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: oc.card,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: oc.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.swap_vert_rounded, size: 16, color: oc.muted),
+                  const SizedBox(width: 4),
+                  Text(
+                    label.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      color: oc.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ),
-      style: TextButton.styleFrom(
-        minimumSize: const Size(44, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
     );
   }
@@ -414,18 +464,19 @@ class _HistoryViewState extends State<HistoryView> {
             ],
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: [
-                _typeChip(oc, 'All', null),
-                _typeChip(oc, 'Income', TransactionType.income),
-                _typeChip(oc, 'Expense', TransactionType.expense),
-                _typeChip(oc, 'Transfer', TransactionType.transfer),
-              ],
-            ),
+          SegmentedPicker<TransactionType?>(
+            options: const [
+              SegmentOption(
+                value: null,
+                label: 'All',
+                semanticLabel: 'All transactions',
+              ),
+              SegmentOption(value: TransactionType.income, label: 'Income'),
+              SegmentOption(value: TransactionType.expense, label: 'Expense'),
+              SegmentOption(value: TransactionType.transfer, label: 'Transfer'),
+            ],
+            selected: _typeFilter,
+            onSelected: (value) => setState(() => _typeFilter = value),
           ),
           // The three secondary rows, revealed together. AnimatedSize keeps the
           // list below from snapping up and down as they come and go.
@@ -621,14 +672,6 @@ class _HistoryViewState extends State<HistoryView> {
     );
   }
 
-  Widget _typeChip(ExpndColors oc, String label, TransactionType? value) =>
-      _chip(
-        oc,
-        label,
-        _typeFilter == value,
-        () => setState(() => _typeFilter = value),
-      );
-
   Widget _categoryChip(ExpndColors oc, TransactionCategory? cat) {
     final active = _customCategoryFilter == null && _categoryFilter == cat;
     return _chip(
@@ -794,7 +837,10 @@ class _HistoryViewState extends State<HistoryView> {
 
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: ExpndSpacing.scrollBottom),
+      padding: EdgeInsets.only(
+        top: _listTop,
+        bottom: ExpndSpacing.scrollBottom,
+      ),
       itemCount: days.length,
       itemBuilder: (context, i) {
         final day = days[i];
@@ -854,7 +900,10 @@ class _HistoryViewState extends State<HistoryView> {
       );
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: ExpndSpacing.scrollBottom),
+      padding: EdgeInsets.only(
+        top: _listTop,
+        bottom: ExpndSpacing.scrollBottom,
+      ),
       itemCount: sorted.length,
       itemBuilder: (context, i) => FadeSlideIn(
         index: i,
@@ -943,6 +992,56 @@ class _HistoryViewState extends State<HistoryView> {
         ? hexColor(custom.colorHex)
         : t.category.color;
 
+    final stackDetails =
+        MediaQuery.sizeOf(context).width < 390 ||
+        MediaQuery.textScalerOf(context).scale(14) > 17;
+    final amountDetails = Column(
+      crossAxisAlignment: stackDetails
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.end,
+      children: [
+        Text(
+          isTransfer
+              ? '→ ${formatCurrency(t.amount, code)}'
+              : '${t.type == TransactionType.income ? "+" : "-"}${formatCurrency(t.amount, code)}',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: isTransfer
+                ? ExpndColors.gold
+                : t.type == TransactionType.income
+                ? ExpndColors.green
+                : ExpndColors.red,
+          ),
+        ),
+        Text(
+          t.type.raw.toUpperCase(),
+          style: TextStyle(
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.8,
+            color:
+                (t.type == TransactionType.income
+                        ? ExpndColors.green
+                        : ExpndColors.red)
+                    .withValues(alpha: 0.7),
+          ),
+        ),
+        if (Receipts.fileFor(t.photoPath) != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: Image.file(
+                Receipts.fileFor(t.photoPath)!,
+                width: 36,
+                height: 36,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+      ],
+    );
     final selected = _selectedIds.contains(t.id);
     return Dismissible(
       key: ValueKey('hist_${t.id}'),
@@ -1023,62 +1122,26 @@ class _HistoryViewState extends State<HistoryView> {
                     if (t.note.isNotEmpty)
                       Text(
                         t.note,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: oc.dimmed),
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: oc.muted,
+                        ),
                       ),
                     Text(
                       _timeLabel(t.date),
                       style: TextStyle(fontSize: 10, color: oc.dimmed),
                     ),
+                    if (stackDetails) ...[
+                      const SizedBox(height: 8),
+                      amountDetails,
+                    ],
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    isTransfer
-                        ? '→ ${formatCurrency(t.amount, code)}'
-                        : '${t.type == TransactionType.income ? "+" : "-"}${formatCurrency(t.amount, code)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: isTransfer
-                          ? ExpndColors.gold
-                          : t.type == TransactionType.income
-                          ? ExpndColors.green
-                          : ExpndColors.red,
-                    ),
-                  ),
-                  Text(
-                    t.type.raw.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.8,
-                      color:
-                          (t.type == TransactionType.income
-                                  ? ExpndColors.green
-                                  : ExpndColors.red)
-                              .withValues(alpha: 0.7),
-                    ),
-                  ),
-                  if (t.photoPath != null && File(t.photoPath!).existsSync())
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(5),
-                        child: Image.file(
-                          File(t.photoPath!),
-                          width: 36,
-                          height: 36,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              if (!stackDetails) ...[const SizedBox(width: 12), amountDetails],
             ],
           ),
         ),

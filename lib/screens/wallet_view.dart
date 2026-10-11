@@ -9,6 +9,7 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/context_ai_coach.dart';
@@ -17,6 +18,9 @@ import 'account_setup.dart';
 import 'settings_view.dart';
 import 'emi.dart';
 import 'home_shell.dart';
+import 'transaction_detail.dart';
+import 'history_view.dart';
+import 'reconciliation_view.dart';
 
 /// Identifies the sticky selected-account bar so tests can assert on it without
 /// guessing at an icon or a label that might legitimately change.
@@ -40,6 +44,9 @@ class _WalletViewState extends State<WalletView> {
   final ScrollController _scroll = ScrollController();
   final GlobalKey _deckKey = GlobalKey();
 
+  /// Height of the glass header the list scrolls under (0 when solid).
+  double _headerInset = 0;
+
   /// True once the card deck has scrolled out of view. The details below belong
   /// to whichever card is at the front, so with the deck gone there's nothing
   /// left on screen saying which account you're reading — hence the sticky bar.
@@ -52,6 +59,9 @@ class _WalletViewState extends State<WalletView> {
   void initState() {
     super.initState();
     _scroll.addListener(_syncDeckVisibility);
+    // A focus request can arrive with the first build (e.g. Wallet created
+    // straight from a Home account card), not only via didUpdateWidget.
+    _applyFocus();
   }
 
   @override
@@ -79,7 +89,9 @@ class _WalletViewState extends State<WalletView> {
 
     // Flip just before it fully clears, so the bar arrives while a sliver of
     // card is still visible instead of after a blank beat.
-    final show = _scroll.offset > clearedAt - 24;
+    // Under a glass header the list starts beneath the header, so the deck is
+    // hidden once it passes the header's bottom edge, not the screen top.
+    final show = _scroll.offset > clearedAt - 24 - _headerInset;
     if (_deckOffscreen.value != show) _deckOffscreen.value = show;
   }
 
@@ -117,28 +129,35 @@ class _WalletViewState extends State<WalletView> {
 
     return Container(
       color: oc.bg,
-      child: Column(
-        children: [
-          _titleBar(accounts),
-          if (accounts.isNotEmpty)
-            _selectedAccountBar(oc, store, accounts, code),
-          Expanded(
-            child: accounts.isEmpty
-                ? _emptyState(oc)
-                : ListView(
-                    controller: _scroll,
-                    padding: EdgeInsets.fromLTRB(
-                      0,
-                      0,
-                      0,
-                      ExpndSpacing.scrollBottomUnderTabBar(context),
+      child: GlassHeaderLayout(
+        header: _titleBar(accounts),
+        // Not counted in the inset: it appears mid-scroll and covers the
+        // content rather than pushing it down.
+        overlay: accounts.isNotEmpty
+            ? _selectedAccountBar(oc, store, accounts, code)
+            : null,
+        body: (context, top) {
+          _headerInset = top;
+          return accounts.isEmpty
+              ? Padding(
+                  padding: EdgeInsets.only(top: top),
+                  child: _emptyState(oc),
+                )
+              : ListView(
+                  controller: _scroll,
+                  padding: EdgeInsets.fromLTRB(
+                    0,
+                    top,
+                    0,
+                    ExpndSpacing.scrollBottomUnderTabBar(context),
+                  ),
+                  children: [
+                    FadeSlideIn(
+                      index: 0,
+                      child: _netWorthHeader(oc, store, accounts, code),
                     ),
-                    children: [
-                      FadeSlideIn(
-                        index: 0,
-                        child: _netWorthHeader(oc, store, accounts, code),
-                      ),
-                      const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+                    if (aiFacts.isNotEmpty) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: FadeSlideIn(
@@ -147,40 +166,40 @@ class _WalletViewState extends State<WalletView> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      FadeSlideIn(
-                        index: 2,
-                        child: KeyedSubtree(
-                          key: _deckKey,
-                          child: _cardStack(store, accounts, code),
-                        ),
+                    ],
+                    FadeSlideIn(
+                      index: 2,
+                      child: KeyedSubtree(
+                        key: _deckKey,
+                        child: _cardStack(store, accounts, code),
                       ),
-                      const SizedBox(height: 20),
-                      if (accounts.length >= 2) ...[
-                        _reorderHint(oc),
-                        const SizedBox(height: 8),
-                      ],
-                      if (_selected < accounts.length)
-                        // Switching cards swaps these details (credit cards add
-                        // an EMI section) — animate the height so the section
-                        // grows/shrinks smoothly instead of snapping.
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 320),
-                          curve: Curves.easeOut,
-                          alignment: Alignment.topCenter,
-                          child: FadeSlideIn(
-                            index: 2,
-                            child: _accountDetails(
-                              oc,
-                              store,
-                              accounts[_selected],
-                              code,
-                            ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (accounts.length >= 2) ...[
+                      _reorderHint(oc),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_selected < accounts.length)
+                      // Switching cards swaps these details (credit cards add
+                      // an EMI section) — animate the height so the section
+                      // grows/shrinks smoothly instead of snapping.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: FadeSlideIn(
+                          index: 2,
+                          child: _accountDetails(
+                            oc,
+                            store,
+                            accounts[_selected],
+                            code,
                           ),
                         ),
-                    ],
-                  ),
-          ),
-        ],
+                      ),
+                  ],
+                );
+        },
       ),
     );
   }
@@ -191,18 +210,6 @@ class _WalletViewState extends State<WalletView> {
     String code,
   ) {
     if (accounts.isEmpty) return const [];
-    final netWorth = accounts.fold(
-      0.0,
-      (sum, account) => sum + store.netWorthFor(account),
-    );
-    final spendable = accounts
-        .where(
-          (account) =>
-              account.type == AccountType.bank ||
-              account.type == AccountType.cash ||
-              account.type == AccountType.savings,
-        )
-        .fold(0.0, (sum, account) => sum + store.netWorthFor(account));
     final creditAccounts = accounts
         .where((account) => account.type == AccountType.credit)
         .toList();
@@ -211,22 +218,9 @@ class _WalletViewState extends State<WalletView> {
       (sum, account) => sum + store.creditUsedFor(account),
     );
 
+    // Net worth and spendable cash are already the gold card's headline and
+    // sub-line; repeating them here only echoed the number directly above.
     return [
-      Insight(
-        title: 'Net worth is ${formatCurrency(netWorth, code)}',
-        detail:
-            'Calculated across ${accounts.length} account${accounts.length == 1 ? '' : 's'}',
-        tone: netWorth >= 0 ? InsightTone.good : InsightTone.warn,
-        icon: 'wallet.pass.fill',
-        weight: 100,
-      ),
-      Insight(
-        title: '${formatCurrency(spendable, code)} is spendable now',
-        detail: 'Bank, cash, and savings balances only',
-        tone: spendable >= 0 ? InsightTone.good : InsightTone.warn,
-        icon: 'banknote.fill',
-        weight: 80,
-      ),
       if (creditAccounts.isNotEmpty)
         Insight(
           title: '${formatCurrency(creditUsed, code)} in credit is used',
@@ -279,9 +273,15 @@ class _WalletViewState extends State<WalletView> {
                 child: Container(
                   key: walletStickyBarKey,
                   decoration: BoxDecoration(
-                    color: oc.surface,
+                    // Part of the glass header plate when glass is on.
+                    color: ExpndGlass.enabled ? null : oc.surface,
                     border: Border(
-                      bottom: BorderSide(color: oc.border, width: 1),
+                      top: ExpndGlass.enabled
+                          ? BorderSide(color: oc.border.withValues(alpha: 0.5))
+                          : BorderSide.none,
+                      bottom: ExpndGlass.enabled
+                          ? BorderSide.none
+                          : BorderSide(color: oc.border, width: 1),
                     ),
                   ),
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -334,19 +334,20 @@ class _WalletViewState extends State<WalletView> {
                                 color: oc.muted,
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              formatCurrency(amount, code),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.2,
+                                color: amount < 0 ? ExpndColors.red : oc.text,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        formatCurrency(amount, code),
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
-                          color: amount < 0 ? ExpndColors.red : oc.text,
-                        ),
-                      ),
                       const SizedBox(width: 6),
                       Icon(sfIcon('chevron.up'), size: 12, color: oc.dimmed),
                     ],
@@ -518,61 +519,101 @@ class _WalletViewState extends State<WalletView> {
               acc.type == AccountType.savings,
         )
         .fold(0.0, (s, acc) => s + store.netWorthFor(acc));
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: ExpndColors.gold,
-          borderRadius: BorderRadius.circular(ExpndRadius.card),
-          border: Border.all(
-            color: ExpndColors.goldDark.withValues(alpha: 0.7),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    final ink = ExpndColors.ink;
+    // Debt (card balances owed, loans) is subtracted from net worth but not
+    // from spendable cash, so spendable can read higher. Say why when it does.
+    final owesMore = spendable > total;
+    Widget eyebrow(String text) => Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
+        color: ink.withValues(alpha: 0.6),
+      ),
+    );
+    Widget stat(String label, String value) => Expanded(
+      child: MergeSemantics(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Total net worth',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0,
-                color: ExpndColors.ink.withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(height: 4),
+            eyebrow(label),
+            const SizedBox(height: 3),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Text(
-                formatCurrency(total, code),
+                value,
                 style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                   color: ExpndColors.ink,
                 ),
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              '${accounts.length} account${accounts.length == 1 ? "" : "s"} · not all spendable',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: ExpndColors.ink.withValues(alpha: 0.5),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              'Spendable cash ${formatCurrency(spendable, code)}',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: ExpndColors.ink.withValues(alpha: 0.72),
-              ),
-            ),
           ],
+        ),
+      ),
+    );
+    // Same raised gold slab as Home's balance card.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: NeoPopElevated(
+        faceColor: ExpndColors.gold,
+        depthColor: ExpndColors.goldDark,
+        borderColor: ExpndColors.goldDark,
+        borderWidth: 1.5,
+        depth: 6,
+        cornerRadius: 12,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              eyebrow('NET WORTH'),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  formatCurrency(total, code),
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    color: ExpndColors.ink,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(height: 1, color: ink.withValues(alpha: 0.16)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  stat('SPENDABLE CASH', formatCurrency(spendable, code)),
+                  const SizedBox(width: 12),
+                  stat(
+                    accounts.length == 1 ? 'ACCOUNT' : 'ACCOUNTS',
+                    '${accounts.length}',
+                  ),
+                ],
+              ),
+              if (owesMore) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Spendable is bank, cash and savings. Card and loan '
+                  'balances you owe come off net worth.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: ink.withValues(alpha: 0.65),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -584,6 +625,9 @@ class _WalletViewState extends State<WalletView> {
   static const double _peek = 58;
 
   Widget _cardStack(AppStore store, List<Account> accounts, String code) {
+    final motionDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 280);
     final n = accounts.length;
     // Paint order (bottom → top): every non-selected card in natural order,
     // then the selected card last so it draws over the rest, fully visible.
@@ -602,13 +646,11 @@ class _WalletViewState extends State<WalletView> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      // Front cards differ in height (credit cards are taller), so totalH jumps
-      // when you switch cards. Tween the height in step with the card spring so
-      // the details section below glides instead of snapping.
+      // Keep the deck and the details beneath it moving at the same pace.
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(end: totalH),
-        duration: const Duration(milliseconds: 480),
-        curve: Curves.easeOut,
+        duration: motionDuration,
+        curve: Curves.easeOutCubic,
         builder: (context, height, child) =>
             SizedBox(height: height, child: child),
         child: Stack(
@@ -627,9 +669,8 @@ class _WalletViewState extends State<WalletView> {
                     : (1 - depth * 0.06).clamp(0.82, 1.0);
                 return AnimatedPositioned(
                   key: ValueKey(accounts[order[pos]].id),
-                  duration: const Duration(milliseconds: 480),
-                  curve:
-                      Curves.easeOutBack, // subtle spring/overshoot on settle
+                  duration: motionDuration,
+                  curve: Curves.easeOutCubic,
                   left: inset,
                   right: inset,
                   top: pos * _peek,
@@ -647,8 +688,8 @@ class _WalletViewState extends State<WalletView> {
                         ? () => _openReorderAccounts(accounts)
                         : null,
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 480),
-                      curve: Curves.easeOut,
+                      duration: motionDuration,
+                      curve: Curves.easeOutCubic,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(5),
                         boxShadow: isFront
@@ -725,184 +766,150 @@ class _WalletViewState extends State<WalletView> {
     );
   }
 
+  /// The account's balance with its working shown — opening balance plus
+  /// what the linked transactions added — and one row of actions underneath.
+  /// It used to headline the *opening* balance as "SET BALANCE" beside a card
+  /// face showing the current one, which read as two conflicting numbers.
   Widget _balanceCard(
     ExpndColors oc,
     AppStore store,
     Account account,
     String code,
   ) {
+    final isCredit = account.type == AccountType.credit;
     final netChange = store.transactionNet(account.id);
-    final positive = netChange >= 0;
-    return NeoPopElevated(
-      faceColor: oc.surface,
-      depthColor: oc.edge,
-      borderColor: oc.border,
-      depth: 0,
-      cornerRadius: 6,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        account.type == AccountType.credit
-                            ? 'OUTSTANDING'
-                            : 'SET BALANCE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          color: oc.muted,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        formatCurrency(account.balance, code),
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: oc.text,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () {
-                    Haptics.light();
-                    showAddAccount(context, editing: account);
-                  },
-                  child: Icon(
-                    sfIcon('pencil.circle.fill'),
-                    size: 26,
-                    color: oc.accent,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: oc.border),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'NET FROM TRANSACTIONS',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          color: oc.muted,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Row(
-                          children: [
-                            Icon(
-                              sfIcon(positive ? 'arrow.up' : 'arrow.down'),
-                              size: 11,
-                              color: positive
-                                  ? ExpndColors.green
-                                  : ExpndColors.red,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              formatCurrency(netChange.abs(), code),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: positive
-                                    ? ExpndColors.green
-                                    : ExpndColors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 1,
-                  height: 36,
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  color: oc.border,
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'LINKED',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                        color: oc.muted,
-                      ),
+    final linked = store.transactionsForAccount(account.id).length;
+    final txns = '$linked transaction${linked == 1 ? '' : 's'}';
+    // A card's outstanding is what's owed now (posted spending + EMIs),
+    // matching the card face.
+    final headline = isCredit
+        ? store.creditUsedFor(account)
+        : store.balanceFor(account);
+    final working = isCredit
+        ? 'Owed across $txns'
+        : 'Opening ${formatCurrency(account.balance, code)} '
+              '${netChange >= 0 ? '+' : '−'} '
+              '${formatCurrency(netChange.abs(), code)} from $txns';
+
+    Widget action(
+      IconData icon,
+      String label,
+      VoidCallback onTap, {
+      Color? color,
+    }) {
+      final c = color ?? oc.text;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: label,
+          excludeSemantics: true,
+          onTap: onTap,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Haptics.light();
+              onTap();
+            },
+            child: SizedBox(
+              height: 56,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 19, color: c),
+                  const SizedBox(height: 4),
+                  Text(
+                    label.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      color: c,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${store.transactionsForAccount(account.id).length} txns',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: oc.surface,
+        borderRadius: BorderRadius.circular(ExpndRadius.card),
+        border: Border.all(color: oc.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            child: MergeSemantics(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isCredit ? 'OUTSTANDING' : 'CURRENT BALANCE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      color: oc.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      formatCurrency(headline, code),
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
                         color: oc.text,
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: oc.border),
-            const SizedBox(height: 12),
-            // A low-emphasis destructive link, not a full-width bordered
-            // button: removing an account is rare and irreversible, so it
-            // shouldn't carry the same visual weight as everyday actions. The
-            // confirm dialog (below) still guards the actual delete. Red is
-            // reserved to the muted glyph/label here and saved for the confirm.
-            GestureDetector(
-              onTap: () => _confirmDelete(context, store, account),
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      sfIcon('trash'),
-                      size: 11,
-                      color: ExpndColors.red.withValues(alpha: 0.75),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Remove account',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: ExpndColors.red.withValues(alpha: 0.75),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    working,
+                    style: TextStyle(fontSize: 12, color: oc.muted),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          Container(height: 1, color: oc.border),
+          // Everyday actions first; the irreversible one last, muted, and
+          // still behind its confirm sheet.
+          Row(
+            children: [
+              action(
+                Icons.fact_check_outlined,
+                'Check bank',
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ReconciliationView(accountId: account.id),
+                  ),
+                ),
+              ),
+              action(
+                sfIcon('pencil'),
+                'Edit',
+                () => showAddAccount(context, editing: account),
+              ),
+              action(
+                sfIcon('trash'),
+                'Remove',
+                () => _confirmDelete(context, store, account),
+                color: ExpndColors.red.withValues(alpha: 0.8),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -997,9 +1004,52 @@ class _WalletViewState extends State<WalletView> {
                 ),
                 const SizedBox(width: 8),
                 if (all.isNotEmpty)
-                  Text(
-                    '${all.length} total',
-                    style: TextStyle(fontSize: 10, color: oc.dimmed),
+                  Semantics(
+                    button: true,
+                    label: 'See all ${all.length} transactions',
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        Haptics.light();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => Scaffold(
+                              backgroundColor: oc.bg,
+                              body: SafeArea(
+                                top: !ExpndGlass.enabled,
+                                bottom: false,
+                                child: HistoryView(initialAccount: account),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        // Pads the link out to a fair tap target.
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'SEE ALL ${all.length}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.6,
+                                color: oc.accent,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            Icon(
+                              sfIcon('chevron.right'),
+                              size: 11,
+                              color: oc.accent,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -1033,7 +1083,8 @@ class _WalletViewState extends State<WalletView> {
             for (int i = 0; i < recent.length; i++) ...[
               TransactionRow(
                 transaction: recent[i],
-                currencyCode: account.currencyCode,
+                currencyCode: context.read<SettingsStore>().currencyCode,
+                onTap: () => showTransactionDetail(context, recent[i]),
               ),
               if (i != recent.length - 1)
                 Padding(

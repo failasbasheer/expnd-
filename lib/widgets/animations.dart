@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// Fades a child in while it gently rises into place. Used for section /
@@ -15,9 +17,9 @@ class FadeSlideIn extends StatefulWidget {
     super.key,
     required this.child,
     this.index = 0,
-    this.duration = const Duration(milliseconds: 380),
-    this.stagger = const Duration(milliseconds: 55),
-    this.offset = 16,
+    this.duration = const Duration(milliseconds: 260),
+    this.stagger = const Duration(milliseconds: 35),
+    this.offset = 8,
   });
 
   @override
@@ -30,19 +32,35 @@ class _FadeSlideInState extends State<FadeSlideIn>
     vsync: this,
     duration: widget.duration,
   );
+  Timer? _delay;
+  bool _started = false;
 
   @override
-  void initState() {
-    super.initState();
-    // Cap the stagger so long lists don't wait seconds for the tail to appear.
-    final delay = widget.stagger * widget.index.clamp(0, 12);
-    Future.delayed(delay, () {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _delay?.cancel();
+      _c.value = 1;
+      return;
+    }
+    if (_started) return;
+    _started = true;
+    // Bound the cascade so a long ledger remains readable immediately.
+    final delay = widget.stagger * widget.index.clamp(0, 8);
+    _delay = Timer(delay, () {
       if (mounted) _c.forward();
     });
   }
 
   @override
+  void didUpdateWidget(covariant FadeSlideIn oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration) _c.duration = widget.duration;
+  }
+
+  @override
   void dispose() {
+    _delay?.cancel();
     _c.dispose();
     super.dispose();
   }
@@ -79,7 +97,7 @@ class PressableScale extends StatefulWidget {
     required this.child,
     this.onTap,
     this.onLongPress,
-    this.scale = 0.94,
+    this.scale = 0.97,
     this.duration = const Duration(milliseconds: 90),
     this.behavior = HitTestBehavior.opaque,
   });
@@ -98,17 +116,27 @@ class _PressableScaleState extends State<PressableScale> {
 
   @override
   Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
     return GestureDetector(
       behavior: widget.behavior,
-      onTapDown: widget.onTap != null ? (_) => _set(true) : null,
-      onTapUp: widget.onTap != null ? (_) => _set(false) : null,
+      onTapDown: widget.onTap != null || widget.onLongPress != null
+          ? (_) => _set(true)
+          : null,
+      onTapUp: widget.onTap != null || widget.onLongPress != null
+          ? (_) => _set(false)
+          : null,
       onTapCancel: () => _set(false),
       onTap: widget.onTap,
-      onLongPress: widget.onLongPress,
+      onLongPress: widget.onLongPress == null
+          ? null
+          : () {
+              _set(false);
+              widget.onLongPress!();
+            },
       child: AnimatedScale(
-        scale: _pressed ? widget.scale : 1.0,
-        duration: widget.duration,
-        curve: Curves.easeOut,
+        scale: _pressed && !reducedMotion ? widget.scale : 1.0,
+        duration: reducedMotion ? Duration.zero : widget.duration,
+        curve: Curves.easeOutCubic,
         child: widget.child,
       ),
     );

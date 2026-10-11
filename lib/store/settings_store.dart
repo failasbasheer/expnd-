@@ -83,6 +83,58 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Calendar month by default for existing users. Other cycles use the
+  /// configured payday as the first day of each budget period.
+  String get budgetCycle {
+    final value = _s('budgetCycle', 'calendar');
+    return const {'calendar', 'payday', 'weekly', 'fortnightly'}.contains(value)
+        ? value
+        : 'calendar';
+  }
+
+  set budgetCycle(String value) {
+    if (!const {
+      'calendar',
+      'payday',
+      'weekly',
+      'fortnightly',
+    }.contains(value)) {
+      return;
+    }
+    _p.setString('budgetCycle', value);
+    notifyListeners();
+  }
+
+  /// Day of month for monthly payday. Days beyond a month's end are clamped.
+  int get paydayDay => (_p.getInt('paydayDay') ?? 1).clamp(1, 31);
+  set paydayDay(int value) {
+    _p.setInt('paydayDay', value.clamp(1, 31));
+    notifyListeners();
+  }
+
+  /// Date of a known payday, used as the anchor for weekly and fortnightly
+  /// cycles. A local calendar date avoids timezone and DST shifts.
+  DateTime get paydayAnchor {
+    final raw = _s('paydayAnchor', '2020-01-06');
+    final parsed = DateTime.tryParse(raw) ?? DateTime(2020, 1, 6);
+    return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  set paydayAnchor(DateTime value) {
+    final day = DateTime(value.year, value.month, value.day);
+    _p.setString(
+      'paydayAnchor',
+      '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}',
+    );
+    notifyListeners();
+  }
+
+  /// A cash flow estimate needs a real payday, not the fallback UI values.
+  bool get paydayConfigured =>
+      budgetCycle == 'weekly' || budgetCycle == 'fortnightly'
+      ? _p.containsKey('paydayAnchor')
+      : _p.containsKey('paydayDay');
+
   /// Highest [kWhatsNewVersion] whose carousel the user has already seen. 0 for
   /// a fresh key, so upgraders from 1.0.0 (who have no stored value) get the
   /// tour once; new installs have it stamped to current at the end of setup.
@@ -376,6 +428,10 @@ class SettingsStore extends ChangeNotifier {
   Map<String, dynamic> backupSnapshot() => {
     'currencyCode': currencyCode,
     'monthlyBudget': monthlyBudget,
+    'budgetCycle': budgetCycle,
+    if (_p.containsKey('paydayDay')) 'paydayDay': paydayDay,
+    if (_p.containsKey('paydayAnchor'))
+      'paydayAnchor': _s('paydayAnchor', '2020-01-06'),
     'userName': userName,
     'appearanceMode': appearanceMode,
     'defaultTransactionType': defaultTransactionType,
@@ -402,6 +458,32 @@ class SettingsStore extends ChangeNotifier {
       'monthlyBudget',
       (snapshot['monthlyBudget'] as num?)?.toDouble() ?? monthlyBudget,
     );
+    final restoredCycle = snapshot['budgetCycle'];
+    if (restoredCycle is String &&
+        const {
+          'calendar',
+          'payday',
+          'weekly',
+          'fortnightly',
+        }.contains(restoredCycle)) {
+      _p.setString('budgetCycle', restoredCycle);
+    }
+    final restoredDay = snapshot['paydayDay'];
+    if (restoredDay is num) {
+      _p.setInt('paydayDay', restoredDay.toInt().clamp(1, 31));
+    }
+    final restoredAnchor = snapshot['paydayAnchor'];
+    final parsedAnchor = restoredAnchor is String
+        ? DateTime.tryParse(restoredAnchor)
+        : null;
+    if (parsedAnchor != null) {
+      // Stored date-only, exactly as the setter writes it.
+      final d = parsedAnchor;
+      _p.setString(
+        'paydayAnchor',
+        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}',
+      );
+    }
     _p.setString('userName', pick('userName', userName));
     _p.setString('appearanceMode', pick('appearanceMode', appearanceMode));
     _p.setString(

@@ -9,11 +9,13 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/context_ai_coach.dart';
 import 'settings_view.dart';
 import '../widgets/neopop.dart';
+import '../widgets/segmented_picker.dart';
 
 enum _Period { m1, m3, m6, y1, all }
 
@@ -85,81 +87,80 @@ class _AnalyticsViewState extends State<AnalyticsView> {
     // height. FadeSlideIn only plays its intro when a slot first gains content.
     return Container(
       color: oc.bg,
-      child: Column(
-        children: [
-          const ExpndHeader(
-            icon: 'chart.bar.xaxis',
-            title: 'ANALYTICS',
-            actions: [SettingsAvatarAction()],
-          ),
-          Expanded(
-            child: store.transactions.isEmpty
-                ? _emptyState(oc)
-                : ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      16,
-                      16,
-                      ExpndSpacing.scrollBottomUnderTabBar(context),
-                    ),
-                    children: [
-                      _slot(0, _periodSelector(oc)),
-                      _slot(
-                        1,
-                        accounts.isNotEmpty
-                            ? _accountFilterRow(oc, accounts)
-                            : null,
-                      ),
-                      _slot(2, _summaryRow(oc, income, expenses, net, code)),
-                      _slot(
-                        3,
-                        _plainLanguageSummary(
-                          oc,
-                          income,
-                          expenses,
-                          net,
-                          filtered.length,
-                          code,
-                        ),
-                      ),
-                      _slot(
-                        4,
-                        aiFacts.isEmpty ? null : ContextAiCoach(facts: aiFacts),
-                      ),
-                      _slot(
-                        5,
-                        filtered.length >= 2
-                            ? _balanceTrendCard(oc, filtered, code)
-                            : null,
-                      ),
-                      _slot(
-                        6,
-                        filtered.isNotEmpty
-                            ? _monthlyBarCard(oc, filtered, code)
-                            : null,
-                      ),
-                      _slot(
-                        7,
-                        categoryCards.isEmpty
-                            ? null
-                            : Column(
-                                children: [
-                                  for (int i = 0; i < categoryCards.length; i++)
-                                    Padding(
-                                      padding: EdgeInsets.only(
-                                        bottom: i == categoryCards.length - 1
-                                            ? 0
-                                            : 20,
-                                      ),
-                                      child: categoryCards[i],
-                                    ),
-                                ],
-                              ),
-                      ),
-                    ],
+      child: GlassHeaderLayout(
+        header: const ExpndHeader(
+          icon: 'chart.bar.xaxis',
+          title: 'ANALYTICS',
+          actions: [SettingsAvatarAction()],
+        ),
+        body: (context, top) => store.transactions.isEmpty
+            ? Padding(
+                padding: EdgeInsets.only(top: top),
+                child: _emptyState(oc),
+              )
+            : ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16 + top,
+                  16,
+                  ExpndSpacing.scrollBottomUnderTabBar(context),
+                ),
+                children: [
+                  _slot(0, _periodSelector(oc)),
+                  _slot(
+                    1,
+                    accounts.isNotEmpty
+                        ? _accountFilterRow(oc, accounts)
+                        : null,
                   ),
-          ),
-        ],
+                  _slot(2, _summaryRow(oc, income, expenses, net, code)),
+                  _slot(
+                    3,
+                    _plainLanguageSummary(
+                      oc,
+                      income,
+                      expenses,
+                      net,
+                      filtered.length,
+                      code,
+                    ),
+                  ),
+                  _slot(
+                    4,
+                    aiFacts.isEmpty ? null : ContextAiCoach(facts: aiFacts),
+                  ),
+                  _slot(
+                    5,
+                    filtered.length >= 2
+                        ? _balanceTrendCard(oc, filtered, code)
+                        : null,
+                  ),
+                  _slot(
+                    6,
+                    filtered.isNotEmpty
+                        ? _monthlyBarCard(oc, filtered, code)
+                        : null,
+                  ),
+                  _slot(
+                    7,
+                    categoryCards.isEmpty
+                        ? null
+                        : Column(
+                            children: [
+                              for (int i = 0; i < categoryCards.length; i++)
+                                Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: i == categoryCards.length - 1
+                                        ? 0
+                                        : 20,
+                                  ),
+                                  child: categoryCards[i],
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -237,91 +238,68 @@ class _AnalyticsViewState extends State<AnalyticsView> {
     );
   }
 
-  Widget _periodSelector(ExpndColors oc) {
-    return Row(
-      children: [
-        for (final p in _Period.values) ...[
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                Haptics.light();
-                setState(() => _period = p);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _period == p ? ExpndColors.gold : oc.surface,
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(
-                    color: _period == p ? ExpndColors.goldDark : oc.border,
-                    width: 1.5,
-                  ),
-                ),
-                child: Text(
-                  p.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                    color: _period == p ? ExpndColors.ink : oc.muted,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (p != _Period.all) const SizedBox(width: 6),
-        ],
-      ],
-    );
-  }
+  Widget _periodSelector(ExpndColors oc) => SegmentedPicker<_Period>(
+    options: [
+      for (final p in _Period.values)
+        SegmentOption(
+          value: p,
+          label: p.label,
+          semanticLabel: '${p.label} period',
+        ),
+    ],
+    selected: _period,
+    onSelected: (p) => setState(() => _period = p),
+  );
 
   Widget _accountFilterRow(ExpndColors oc, List<Account> accounts) {
     Widget chip(Account? acc) {
       final active = _accountFilter?.id == acc?.id;
-      return GestureDetector(
-        onTap: () {
-          Haptics.light();
-          setState(() => _accountFilter = acc);
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? ExpndColors.gold : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: active ? ExpndColors.goldDark : oc.border,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (acc != null) ...[
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: hexColor(acc.colorHex),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 5),
-              ],
-              Text(
-                acc?.name ?? 'ALL ACCOUNTS',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                  color: active ? ExpndColors.ink : oc.muted,
-                ),
+      return Semantics(
+        button: true,
+        selected: active,
+        label: acc?.name ?? 'All accounts',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              Haptics.light();
+              setState(() => _accountFilter = acc);
+            },
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: active
+                    ? oc.accent.withValues(alpha: 0.13)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (acc != null) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: hexColor(acc.colorHex),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    acc?.name ?? 'All accounts',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active ? oc.accent : oc.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       );
@@ -331,7 +309,7 @@ class _AnalyticsViewState extends State<AnalyticsView> {
     // to swipe" instead of a hard-clipped chip. dstIn keeps the row opaque
     // until the last few points, then ramps to transparent.
     return SizedBox(
-      height: 30,
+      height: 44,
       child: ShaderMask(
         shaderCallback: (rect) => const LinearGradient(
           begin: Alignment.centerLeft,
@@ -807,11 +785,12 @@ class _AnalyticsViewState extends State<AnalyticsView> {
       'chart.bar.fill',
       Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               _legendDot(oc.positive, 'Income', oc),
-              const SizedBox(width: 12),
               _legendDot(oc.negative, 'Expenses', oc),
             ],
           ),

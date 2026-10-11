@@ -2,6 +2,8 @@ import '../models/models.dart';
 import '../store/app_store.dart';
 import '../theme/currencies.dart';
 import 'upcoming.dart';
+import 'cash_flow.dart';
+import 'subscriptions.dart';
 
 /// Event alerts: the notifications that fire off something *happening* rather
 /// than the clock reaching a set hour.
@@ -93,6 +95,44 @@ List<DueAlert> dueSoonAlerts(
   return out;
 }
 
+/// Local reminders three days before a tracked trial ends. The date is shown
+/// as a review prompt because ending tracking inside EXPND cannot cancel a
+/// subscription with its provider.
+List<DueAlert> trialEndAlerts(
+  Iterable<Transaction> transactions, {
+  DateTime? from,
+  int leadDays = 3,
+  int hour = 21,
+  int minute = 0,
+}) {
+  final now = from ?? DateTime.now();
+  final alerts = <DueAlert>[];
+  for (final transaction in transactions) {
+    if (!isSubscription(transaction)) continue;
+    final end = transaction.subscriptionTrialEndDate;
+    if (end == null) continue;
+    final day = DateTime(
+      end.year,
+      end.month,
+      end.day,
+    ).subtract(Duration(days: leadDays));
+    final fireAt = DateTime(day.year, day.month, day.day, hour, minute);
+    if (!fireAt.isAfter(now)) continue;
+    final name = transaction.note.trim().isEmpty
+        ? transaction.category.raw
+        : transaction.note.trim();
+    alerts.add(
+      DueAlert(
+        fireAt: fireAt,
+        title: '$name trial ends in $leadDays days',
+        body: 'Review the subscription before the trial ends.',
+      ),
+    );
+  }
+  alerts.sort((a, b) => a.fireAt.compareTo(b.fireAt));
+  return alerts;
+}
+
 /// Whether the month's spending has just crossed [monthlyBudget] and hasn't
 /// been announced yet. [lastAlertedMonth] is the `yyyymm` an alert last fired
 /// for, so a month already flagged stays quiet no matter how far over it goes.
@@ -100,16 +140,24 @@ bool newlyOverBudget(
   AppStore store, {
   required double monthlyBudget,
   required int lastAlertedMonth,
+  BudgetPeriod? period,
   DateTime? from,
 }) {
   if (monthlyBudget <= 0) return false;
   final now = from ?? DateTime.now();
-  if (yyyymm(now) == lastAlertedMonth) return false;
-  return store.spentInMonth(now) > monthlyBudget;
+  if (budgetAlertKey(now, period: period) == lastAlertedMonth) return false;
+  final spent = period == null
+      ? store.spentInMonth(now)
+      : budgetSpentInPeriod(store, period);
+  return spent > monthlyBudget;
 }
 
 /// `yyyymm` for [d] — the key [newlyOverBudget] dedups on and the caller stores.
 int yyyymm(DateTime d) => d.year * 100 + d.month;
+
+int budgetAlertKey(DateTime date, {BudgetPeriod? period}) => period == null
+    ? yyyymm(date)
+    : period.start.year * 10000 + period.start.month * 100 + period.start.day;
 
 /// The over-budget notification, or null when it isn't due (see
 /// [newlyOverBudget]).
@@ -118,19 +166,26 @@ StateAlert? overBudgetAlert(
   String code, {
   required double monthlyBudget,
   required int lastAlertedMonth,
+  BudgetPeriod? period,
   DateTime? from,
 }) {
   if (!newlyOverBudget(
     store,
     monthlyBudget: monthlyBudget,
     lastAlertedMonth: lastAlertedMonth,
+    period: period,
     from: from,
   )) {
     return null;
   }
   final now = from ?? DateTime.now();
-  final over = store.spentInMonth(now) - monthlyBudget;
-  final left = DateTime(now.year, now.month + 1, 0).day - now.day;
+  final spent = period == null
+      ? store.spentInMonth(now)
+      : budgetSpentInPeriod(store, period);
+  final over = spent - monthlyBudget;
+  final end = period?.end ?? DateTime(now.year, now.month + 1);
+  final left =
+      end.difference(DateTime(now.year, now.month, now.day)).inDays - 1;
   return StateAlert(
     'Over budget',
     'You\'ve passed ${formatCurrency(monthlyBudget, code)} — '

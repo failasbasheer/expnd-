@@ -87,7 +87,10 @@ class AccountLoansSection extends StatelessWidget {
                 const SizedBox(height: 10),
                 _UtilRow(fraction: util),
                 const SizedBox(height: 6),
-                Row(
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     Text(
                       '${(util * 100).toStringAsFixed(0)}% utilized',
@@ -97,7 +100,6 @@ class AccountLoansSection extends StatelessWidget {
                         color: oc.muted,
                       ),
                     ),
-                    const Spacer(),
                     Text(
                       '${formatCurrency(used, code)} of ${formatCurrency(limit, code)}',
                       style: TextStyle(fontSize: 11, color: oc.dimmed),
@@ -194,6 +196,9 @@ class _EmiRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final oc = context.oc;
     final done = !emi.isActive;
+    final stackAmount =
+        MediaQuery.sizeOf(context).width < 390 ||
+        MediaQuery.textScalerOf(context).scale(14) > 17;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -208,7 +213,7 @@ class _EmiRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   emi.name.isEmpty ? 'EMI' : emi.name,
-                  maxLines: 1,
+                  maxLines: stackAmount ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 14,
@@ -217,17 +222,35 @@ class _EmiRow extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${formatCurrency(emi.monthlyAmount, code)}/mo',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: oc.accent,
+              if (!stackAmount) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${formatCurrency(emi.monthlyAmount, code)}/mo',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: oc.accent,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
+          if (stackAmount) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${formatCurrency(emi.monthlyAmount, code)}/mo',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: oc.accent,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(3),
@@ -258,11 +281,16 @@ class _EmiRow extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                done
-                    ? 'Closed'
-                    : '${formatCurrency(emi.remainingAmount, code)} left',
-                style: TextStyle(fontSize: 11, color: oc.dimmed),
+              Flexible(
+                child: Text(
+                  done
+                      ? 'Closed'
+                      : '${formatCurrency(emi.remainingAmount, code)} left',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 11, color: oc.dimmed),
+                ),
               ),
             ],
           ),
@@ -395,8 +423,9 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
 
   bool get _isEditing => widget.editing != null;
 
-  double get _principal => double.tryParse(_principalCtrl.text) ?? 0;
-  double get _rate => double.tryParse(_rateCtrl.text) ?? 0;
+  double get _principal => parseAmount(_principalCtrl.text) ?? 0;
+  // Accepts a comma decimal: "8,5" used to parse as 0% with no error.
+  double get _rate => parseAmount(_rateCtrl.text) ?? 0;
   int get _tenure => int.tryParse(_tenureCtrl.text) ?? 0;
 
   bool get _isValid =>
@@ -510,9 +539,6 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
               children: [
-                // Live calculation summary — this is the EMI calculator.
-                _calcCard(oc, code, p),
-                const SizedBox(height: 22),
                 _label('Loan name', oc),
                 const SizedBox(height: 8),
                 _field(
@@ -550,6 +576,7 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                                   const TextInputType.numberWithOptions(
                                     decimal: true,
                                   ),
+                              inputFormatters: const [AmountInputFormatter()],
                               onChanged: (_) => setState(() {}),
                               style: TextStyle(fontSize: 16, color: oc.text),
                               decoration: const InputDecoration(
@@ -592,6 +619,10 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                     ),
                   ],
                 ),
+                if (_principal > 0 && _tenure > 0) ...[
+                  const SizedBox(height: 18),
+                  _calcCard(oc, code, p),
+                ],
                 const SizedBox(height: 18),
                 _label('Start date', oc),
                 const SizedBox(height: 8),
@@ -619,12 +650,18 @@ class _AddEmiSheetState extends State<_AddEmiSheet> {
                       children: [
                         Icon(sfIcon('calendar'), size: 14, color: oc.muted),
                         const SizedBox(width: 10),
-                        Text(
-                          _fmtDate(_startDate),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: oc.text,
+                        // Long month names ("11 September 2026") at large
+                        // text sizes on a 320pt screen ellipsize, not overflow.
+                        Expanded(
+                          child: Text(
+                            _fmtDate(_startDate),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: oc.text,
+                            ),
                           ),
                         ),
                       ],
@@ -846,7 +883,10 @@ class _PayInstallmentSheet extends StatefulWidget {
 class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
   String? _accountId;
   late final TextEditingController _amountCtrl = TextEditingController(
-    text: widget.emi.monthlyAmount.toStringAsFixed(2),
+    text: amountInputText(
+      widget.emi.monthlyAmount,
+      context.read<SettingsStore>().currencyCode,
+    ),
   );
 
   @override
@@ -872,7 +912,7 @@ class _PayInstallmentSheetState extends State<_PayInstallmentSheet> {
     super.dispose();
   }
 
-  double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
+  double get _amount => parseAmount(_amountCtrl.text) ?? 0;
   bool get _isValid => _amount > 0;
 
   @override

@@ -80,6 +80,11 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- iPad: always full screen, never a resizable window. EXPND's layout is a
+	     single centred column, so a free-form window adds nothing but a frame
+	     and window controls over the header. -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

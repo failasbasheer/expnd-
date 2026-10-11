@@ -133,14 +133,13 @@ void main() {
   testWidgets('opens with only search and the type row', (tester) async {
     await _pump(tester);
 
-    // Type chips stay out — they are the filter people reach for most.
-    // "TRANSFER" identifies the row unambiguously: INCOME/EXPENSE also label
-    // every transaction row in the list below.
-    expect(find.text('Transfer'), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Transfer')).dy,
-      tester.getTopLeft(find.text('All')).dy,
-    );
+    // Type segments stay out — they are the filter people reach for most.
+    // Found by their spoken names: the shared picker shows caps labels, and
+    // INCOME/EXPENSE also label every transaction row in the list below.
+    final transfer = find.bySemanticsLabel('Transfer');
+    final all = find.bySemanticsLabel('All transactions');
+    expect(transfer, findsOneWidget);
+    expect(tester.getTopLeft(transfer).dy, tester.getTopLeft(all).dy);
 
     // The three collapsible rows are not laid out at all.
     expect(find.text('ALL ACCOUNTS'), findsNothing);

@@ -31,6 +31,13 @@ void main() {
       expect(formatAmount(1250.5), AmountPrivacy.mask);
     });
 
+    test('masks percentages too (budget used, month-on-month change)', () {
+      expect(formatPercent(63), '●●%');
+      expect(formatPercent(63), formatPercent(187));
+      AmountPrivacy.hidden = false;
+      expect(formatPercent(63), '63%');
+    });
+
     test('leaks nothing about magnitude', () {
       expect(formatCurrency(9999999.99, 'USD'), formatCurrency(0.01, 'USD'));
       expect(formatAmount(9999999.99), formatAmount(0.01));

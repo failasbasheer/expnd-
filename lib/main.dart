@@ -11,11 +11,13 @@ import 'services/backup.dart';
 import 'services/capture_inbox.dart';
 import 'services/capture_trigger.dart';
 import 'services/demo_seed.dart';
+import 'services/receipts.dart';
 import 'services/reminders.dart';
 import 'services/widget_bridge.dart';
 import 'store/app_store.dart';
 import 'store/settings_store.dart';
 import 'theme/expnd_theme.dart';
+import 'widgets/readable_column.dart';
 import 'screens/add_transaction.dart';
 import 'screens/capture_inbox_view.dart';
 import 'screens/home_shell.dart';
@@ -47,10 +49,14 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
   late final Future<_Boot> _boot = _load();
 
   Future<_Boot> _load() async {
-    final init = _init();
-    // Keep the splash up long enough for its animation to land.
-    await Future.delayed(const Duration(milliseconds: 1800));
-    return init;
+    // Open as soon as the stores are ready. The short floor only stops a very
+    // fast boot from flashing the splash for a single frame; it used to hold
+    // 1.8s on every launch just to let an animation finish.
+    final results = await Future.wait([
+      _init(),
+      Future<void>.delayed(const Duration(milliseconds: 300)),
+    ]);
+    return results.first as _Boot;
   }
 
   Future<_Boot> _init() async {
@@ -78,13 +84,9 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
     // was typed by hand and there is no server to re-fetch it from, so this
     // runs unprompted rather than waiting to be remembered. Failures are
     // swallowed inside — a backup must never stop the app from opening.
-    unawaited(
-      maybeAutoBackup(
-        store,
-        settings,
-        await getApplicationDocumentsDirectory(),
-      ),
-    );
+    final documents = await getApplicationDocumentsDirectory();
+    Receipts.init(documents);
+    unawaited(maybeAutoBackup(store, settings, documents));
     return _Boot(settings, store);
   }
 
@@ -95,7 +97,7 @@ class _ExpndBootstrapState extends State<ExpndBootstrap> {
       builder: (context, snap) {
         // Cross-fade from the splash into the app instead of a hard cut.
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 450),
+          duration: const Duration(milliseconds: 250),
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeIn,
           child: snap.hasData
@@ -158,9 +160,14 @@ class ExpndApp extends StatelessWidget {
               data: MediaQuery.of(
                 context,
               ).copyWith(textScaler: _BoostedTextScaler(system, 1.15)),
-              child: GestureDetector(
-                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                child: child,
+              // The lock and privacy cover are drawn here, above the
+              // Navigator, so they also hide routes and sheets pushed over
+              // Home (Settings, Add, Capture Inbox) — not just the home route.
+              child: _LockLayer(
+                child: GestureDetector(
+                  onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                  child: ReadableColumn(child: child!),
+                ),
               ),
             );
           },
@@ -231,7 +238,10 @@ class AppRoot extends StatefulWidget {
 }
 
 class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
-  bool _unlocked = false;
+  // Lock state lives in [_lockGate] so [_LockLayer], which sits above the
+  // Navigator, can read it.
+  bool get _unlocked => _lockGate.unlocked;
+  set _unlocked(bool v) => _lockGate.unlocked = v;
   bool _shownSetup = false;
   bool _shownWhatsNew = false;
   // A quick-add tap that arrived while the app was locked, replayed on unlock.
@@ -244,11 +254,13 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   DateTime? _leftAt;
   // An opaque cover shown while the app is away, so the OS app-switcher
   // snapshot never leaks balances even when re-auth is inside its grace window.
-  bool _covering = false;
+  bool get _covering => _lockGate.covering;
+  set _covering(bool v) => _lockGate.covering = v;
 
   @override
   void initState() {
     super.initState();
+    _lockGate.onUnlock = _handleUnlock;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeShowSetup();
@@ -283,8 +295,16 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     }
   }
 
+  void _handleUnlock() {
+    setState(() => _unlocked = true);
+    _maybeShowSetup();
+    _maybeShowWhatsNew();
+    if (_pendingQuickAdd) _openQuickAdd();
+  }
+
   @override
   void dispose() {
+    if (_lockGate.onUnlock == _handleUnlock) _lockGate.onUnlock = null;
     _widgetClicks?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -331,7 +351,13 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     // check below — draining has nothing to do with locking, and skipping it
     // for everyone who hasn't turned on biometrics would strand their taps.
     if (state == AppLifecycleState.resumed) {
-      CaptureInbox.drain(context.read<AppStore>());
+      final store = context.read<AppStore>();
+      CaptureInbox.drain(store);
+      // A long-running app may cross a due date (or a month) while in the
+      // background: post what's due, and refresh the widgets, whose figures
+      // are only ever computed here — neither platform refreshes them itself.
+      store.generateRecurring();
+      WidgetBridge.sync();
       // A Back Tap fired while the app sat in the background foregrounds it,
       // which lands here rather than in initState.
       _checkCaptureTrigger();
@@ -402,27 +428,76 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final settings = context.watch<SettingsStore>();
-    final locked = settings.biometricLockEnabled && !_unlocked;
+  Widget build(BuildContext context) => const HomeShell();
+}
 
-    return Stack(
-      children: [
-        const HomeShell(),
-        if (locked)
-          LockScreen(
-            onUnlock: () {
-              setState(() => _unlocked = true);
-              _maybeShowSetup();
-              _maybeShowWhatsNew();
-              if (_pendingQuickAdd) _openQuickAdd();
-            },
-          )
+/// Lock state shared between [AppRoot] (which drives it from the app
+/// lifecycle) and [_LockLayer] (which draws it above every route).
+class _LockGate extends ChangeNotifier {
+  bool _unlocked = false;
+  bool _covering = false;
+  VoidCallback? onUnlock;
+
+  bool get unlocked => _unlocked;
+  set unlocked(bool v) {
+    if (_unlocked == v) return;
+    _unlocked = v;
+    notifyListeners();
+  }
+
+  bool get covering => _covering;
+  set covering(bool v) {
+    if (_covering == v) return;
+    _covering = v;
+    notifyListeners();
+  }
+}
+
+final _lockGate = _LockGate();
+
+class _LockLayer extends StatelessWidget {
+  final Widget child;
+  const _LockLayer({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = context.select<SettingsStore, bool>(
+      (s) => s.biometricLockEnabled,
+    );
+    return ListenableBuilder(
+      listenable: _lockGate,
+      builder: (context, _) {
+        final locked = enabled && !_lockGate.unlocked;
         // Away but still within the grace window: no re-auth needed, just an
         // opaque cover so nothing shows through the app-switcher snapshot.
-        else if (_covering)
-          const _PrivacyCover(),
-      ],
+        final covering = enabled && !locked && _lockGate.covering;
+        final blocked = locked || covering;
+        if (blocked) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          );
+        }
+        return Stack(
+          children: [
+            // Hidden visually isn't enough: without these, VoiceOver/TalkBack
+            // could still read balances and activate controls underneath, and
+            // a focused field kept its keyboard focus.
+            ExcludeSemantics(
+              excluding: blocked,
+              child: IgnorePointer(
+                ignoring: blocked,
+                child: FocusScope(canRequestFocus: !blocked, child: child),
+              ),
+            ),
+            if (locked)
+              Positioned.fill(
+                child: LockScreen(onUnlock: () => _lockGate.onUnlock?.call()),
+              )
+            else if (covering)
+              const Positioned.fill(child: _PrivacyCover()),
+          ],
+        );
+      },
     );
   }
 }

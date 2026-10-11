@@ -90,6 +90,8 @@ const Map<String, IconData> _map = {
   'lock.shield.fill': Icons.gpp_good,
   'bell.fill': CupertinoIcons.bell_fill,
   'gearshape.fill': CupertinoIcons.gear_alt_fill,
+  'tag.fill': CupertinoIcons.tag_fill,
+  'archivebox.fill': CupertinoIcons.archivebox_fill,
   'paintbrush.fill': Icons.brush,
   'dollarsign.circle.fill': Icons.attach_money,
   'target': Icons.track_changes,

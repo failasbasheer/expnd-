@@ -8,6 +8,7 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/animations.dart';
 import '../widgets/app_header.dart';
 import '../widgets/context_ai_coach.dart';
@@ -23,7 +24,11 @@ Future<void> showUpcoming(BuildContext context) {
     MaterialPageRoute(
       builder: (_) => Scaffold(
         backgroundColor: oc.bg,
-        body: const SafeArea(bottom: false, child: UpcomingView()),
+        body: const SafeArea(
+          top: !ExpndGlass.enabled,
+          bottom: false,
+          child: UpcomingView(),
+        ),
       ),
     ),
   );
@@ -74,17 +79,17 @@ class UpcomingView extends StatelessWidget {
 
     return Container(
       color: oc.bg,
-      child: Column(
-        children: [
-          FadeSlideIn(child: _titleBar(context, oc)),
-          if (items.isEmpty && series.isEmpty)
-            Expanded(child: _emptyState(oc))
-          else
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
+      child: GlassHeaderLayout(
+        header: FadeSlideIn(child: _titleBar(context, oc)),
+        body: (context, top) => (items.isEmpty && series.isEmpty)
+            ? Padding(
+                padding: EdgeInsets.only(top: top),
+                child: _emptyState(oc),
+              )
+            : ListView(
+                padding: EdgeInsets.fromLTRB(
                   16,
-                  4,
+                  4 + top,
                   16,
                   ExpndSpacing.scrollBottom,
                 ),
@@ -117,8 +122,6 @@ class UpcomingView extends StatelessWidget {
                   ],
                 ],
               ),
-            ),
-        ],
       ),
     );
   }
@@ -300,7 +303,10 @@ class UpcomingView extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Flexible(
+        // Capped rather than Flexible, so the figure sits flush right instead
+        // of starting halfway across the card.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 170),
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
@@ -607,7 +613,7 @@ class UpcomingView extends StatelessWidget {
                     t.note.trim().isNotEmpty
                         ? t.note.trim()
                         : (custom?.name ?? t.category.raw),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
@@ -620,27 +626,28 @@ class UpcomingView extends StatelessWidget {
                         ? t.recurrenceRule.raw.toUpperCase()
                         : '${t.recurrenceRule.raw.toUpperCase()} · NEXT '
                               '${_shortDay(t.nextDueDate!).toUpperCase()}',
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
+                      letterSpacing: 0.2,
                       color: oc.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${isIncome ? "+" : "−"}${formatCurrency(t.amount, code)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isIncome ? oc.positive : oc.text,
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              '${isIncome ? "+" : "−"}${formatCurrency(t.amount, code)}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: isIncome ? oc.positive : oc.text,
-              ),
-            ),
             const SizedBox(width: 4),
             Icon(sfIcon('chevron.right'), size: 12, color: oc.dimmed),
           ],
@@ -779,7 +786,13 @@ class UpcomingRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Flexible(
+          // Capped, not Flexible: a Flexible here split the row in half with
+          // the Expanded text, so short amounts floated mid-row and the
+          // account name was cut off early.
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.38,
+            ),
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,

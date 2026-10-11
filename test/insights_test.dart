@@ -98,6 +98,51 @@ void main() {
     });
   });
 
+  test('early-month pace is quiet unless the budget is already exceeded', () {
+    final s = store();
+    spend(s, 700, DateTime(2026, 6, 1));
+    final out = buildInsights(
+      s,
+      'USD',
+      from: DateTime(2026, 6, 2),
+      monthlyBudget: 1000,
+    );
+    expect(has(out, 'On pace'), isFalse);
+    spend(s, 400, DateTime(2026, 6, 2));
+    expect(
+      has(
+        buildInsights(
+          s,
+          'USD',
+          from: DateTime(2026, 6, 2),
+          monthlyBudget: 1000,
+        ),
+        'Over budget',
+      ),
+      isTrue,
+    );
+  });
+
+  test('future entries do not inflate spending or conceal a stale ledger', () {
+    final s = store();
+    spend(s, 20, DateTime(2026, 6, 1));
+    spend(s, 5000, DateTime(2026, 6, 25));
+    final out = run(s, budget: 1000);
+    expect(has(out, 'Over budget'), isFalse);
+    expect(has(out, 'On pace'), isFalse);
+    expect(has(out, 'Nothing logged in 14 days'), isTrue);
+  });
+
+  test('category comparison uses the same elapsed days of prior months', () {
+    final s = store();
+    for (final month in [3, 4, 5]) {
+      spend(s, 100, DateTime(2026, month, 10));
+      spend(s, 900, DateTime(2026, month, 25));
+    }
+    spend(s, 100, DateTime(2026, 6, 10));
+    expect(has(run(s), 'Food is'), isFalse);
+  });
+
   group('category vs its own average', () {
     void threeQuietMonths(AppStore s, double each) {
       for (final m in [3, 4, 5]) {

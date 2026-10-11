@@ -16,8 +16,10 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../theme/sf_icons.dart';
+import '../widgets/glass_header.dart';
 import '../widgets/app_header.dart';
 import '../widgets/disclosure_section.dart';
+import '../widgets/neopop.dart';
 import '../widgets/section_card.dart';
 import '../widgets/tag_manager.dart';
 import 'account_setup.dart';
@@ -60,89 +62,96 @@ class _SettingsViewState extends State<SettingsView> {
     return Scaffold(
       backgroundColor: oc.bg,
       body: SafeArea(
+        top: !ExpndGlass.enabled,
         bottom: false,
-        child: Column(
-          children: [
-            ExpndHeader(
-              icon: 'person.fill',
-              title: 'SETTINGS',
-              actions: [
-                HeaderAction(
-                  icon: 'xmark',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  semanticLabel: 'Close settings',
+        child: GlassHeaderLayout(
+          header: ExpndHeader(
+            icon: 'person.fill',
+            title: 'SETTINGS',
+            actions: [
+              HeaderAction(
+                icon: 'xmark',
+                onPressed: () => Navigator.of(context).maybePop(),
+                semanticLabel: 'Close settings',
+              ),
+            ],
+          ),
+          body: (context, top) => ListView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16 + top,
+              16,
+              ExpndSpacing.scrollBottom,
+            ),
+            children: [
+              _avatarCard(oc, store, settings),
+              const SizedBox(height: 20),
+              DisclosureSection(
+                title: 'General',
+                icon: 'gearshape.fill',
+                tint: oc.muted,
+                subtitle: 'Currency, entry type and app lock',
+                child: _generalSection(oc, store, settings),
+              ),
+              const SizedBox(height: 12),
+              DisclosureSection(
+                title: 'Reminders & alerts',
+                icon: 'bell.fill',
+                tint: hexColor('F97316'),
+                subtitle: 'Bills, budgets and daily nudges',
+                child: _notificationsSection(oc, settings),
+              ),
+              const SizedBox(height: 12),
+              DisclosureSection(
+                title: 'Categories & tags',
+                icon: 'tag.fill',
+                tint: hexColor('A855F7'),
+                subtitle: 'Organize transactions your way',
+                child: Column(
+                  children: [
+                    _manageCategoriesSection(oc, store),
+                    if (store.allTags.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      _manageTagsSection(oc, store, code),
+                    ],
+                  ],
+                ),
+              ),
+              if (Platform.isIOS) ...[
+                const SizedBox(height: 12),
+                DisclosureSection(
+                  title: 'Quick capture',
+                  icon: 'bolt.fill',
+                  tint: oc.accent,
+                  subtitle: 'Widget buttons and Back Tap setup',
+                  child: Column(
+                    children: [
+                      _quickLogSection(oc, settings, symbol),
+                      const SizedBox(height: 20),
+                      _backTapSection(oc),
+                    ],
+                  ),
                 ),
               ],
-            ),
-            Expanded(
-              child: ListView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(
-                  16,
-                  16,
-                  16,
-                  ExpndSpacing.scrollBottom,
-                ),
-                children: [
-                  _avatarCard(oc, settings),
-                  const SizedBox(height: 20),
-                  DisclosureSection(
-                    title: 'General',
-                    subtitle: 'Currency, default entry type and app lock',
-                    child: _generalSection(oc, store, settings),
-                  ),
-                  const SizedBox(height: 12),
-                  DisclosureSection(
-                    title: 'Reminders & alerts',
-                    subtitle:
-                        'Daily reminders, bills, budgets and weekly summaries',
-                    child: _notificationsSection(oc, settings),
-                  ),
-                  const SizedBox(height: 12),
-                  DisclosureSection(
-                    title: 'Categories & tags',
-                    subtitle: 'Organize transactions your way',
-                    child: Column(
-                      children: [
-                        _manageCategoriesSection(oc, store),
-                        if (store.allTags.isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          _manageTagsSection(oc, store, code),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (Platform.isIOS) ...[
-                    const SizedBox(height: 12),
-                    DisclosureSection(
-                      title: 'Quick capture',
-                      subtitle: 'Widget buttons and Back Tap setup',
-                      child: Column(
-                        children: [
-                          _quickLogSection(oc, settings, symbol),
-                          const SizedBox(height: 20),
-                          _backTapSection(oc),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  DisclosureSection(
-                    title: 'Appearance',
-                    subtitle: 'Follow your device, or choose light or dark',
-                    child: _appearanceSection(oc, settings),
-                  ),
-                  const SizedBox(height: 12),
-                  DisclosureSection(
-                    title: 'Data',
-                    subtitle: 'Backups, restore, import and export',
-                    child: _dataSection(oc, store, symbol),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              DisclosureSection(
+                title: 'Appearance',
+                icon: 'circle.lefthalf.filled',
+                tint: hexColor('3B82F6'),
+                subtitle: 'Light, dark or match device',
+                child: _appearanceSection(oc, settings),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              DisclosureSection(
+                title: 'Data',
+                icon: 'archivebox.fill',
+                tint: ExpndColors.green,
+                subtitle: 'Backup, restore and export',
+                child: _dataSection(oc, store, symbol),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -156,104 +165,211 @@ class _SettingsViewState extends State<SettingsView> {
     setState(() => _editingName = false);
   }
 
-  Widget _avatarCard(ExpndColors oc, SettingsStore settings) {
+  /// The 1.0 profile card: a raised gold NeoPOP block with an ink monogram,
+  /// WELCOME BACK over your name, and a strip of ledger stats.
+  Widget _avatarCard(
+    ExpndColors oc,
+    AppStore store,
+    SettingsStore settings,
+  ) {
+    final ink = ExpndColors.ink;
     final name = settings.userName.trim();
-    final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: oc.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: oc.border),
+    final named = name.isNotEmpty && name != 'Your Name';
+    final initial = named ? name.characters.first.toUpperCase() : '?';
+    final oldest = store.transactionsAscending.firstOrNull?.date;
+    final days = oldest == null
+        ? 0
+        : DateTime.now().difference(oldest).inDays.clamp(0, 99999) + 1;
+    final inkButton = ButtonStyle(
+      backgroundColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.disabled)
+            ? ink.withValues(alpha: 0.25)
+            : ink,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: oc.card,
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: oc.text,
+      foregroundColor: WidgetStatePropertyAll(ExpndColors.gold),
+    );
+
+    Widget stat(String value, String label) => Expanded(
+      child: MergeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: ink,
+                ),
+              ),
+            ),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                color: ink.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Matches the Home balance card: rounded gold face, gold-dark rim and a
+    // 6pt offset edge.
+    return NeoPopElevated(
+      faceColor: ExpndColors.gold,
+      depthColor: ExpndColors.goldDark,
+      borderColor: ExpndColors.goldDark,
+      borderWidth: 1.5,
+      depth: 6,
+      cornerRadius: 12,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Flat outlined monogram tile: hard ink border, no heavy block.
+                ExcludeSemantics(
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: ink.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: ink.withValues(alpha: 0.5),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: ink,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'WELCOME BACK',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          color: ink.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        named ? name : 'Add your name',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!_editingName)
+                  IconButton(
+                    tooltip: 'Edit name',
+                    onPressed: () {
+                      _nameCtrl.text = named ? settings.userName : '';
+                      setState(() => _editingName = true);
+                    },
+                    icon: Icon(sfIcon('pencil'), size: 18, color: ink),
+                  ),
+              ],
+            ),
+            if (_editingName) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _nameCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _saveName(settings),
+                onChanged: (_) => setState(() {}),
+                cursorColor: ink,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: ink,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Your name',
+                  labelStyle: TextStyle(color: ink.withValues(alpha: 0.7)),
+                  floatingLabelStyle: TextStyle(color: ink),
+                  filled: true,
+                  fillColor: ink.withValues(alpha: 0.06),
+                  contentPadding: const EdgeInsets.all(14),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: ink.withValues(alpha: 0.5)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: BorderSide(color: ink, width: 2),
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name.isEmpty ? 'Your profile' : name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: oc.text,
-                      ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton(
+                    style: inkButton,
+                    onPressed: _nameCtrl.text.trim().isEmpty
+                        ? null
+                        : () => _saveName(settings),
+                    child: const Text('Save name'),
+                  ),
+                  TextButton(
+                    style: ButtonStyle(
+                      foregroundColor: WidgetStatePropertyAll(ink),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Your personal ledger',
-                      style: TextStyle(fontSize: 12, color: oc.muted),
-                    ),
-                  ],
-                ),
+                    onPressed: () {
+                      _nameCtrl.text = settings.userName;
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      setState(() => _editingName = false);
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                ],
               ),
-              if (!_editingName)
-                IconButton(
-                  tooltip: 'Edit name',
-                  onPressed: () {
-                    _nameCtrl.text = settings.userName;
-                    setState(() => _editingName = true);
-                  },
-                  icon: Icon(Icons.edit_outlined, size: 20, color: oc.muted),
-                ),
             ],
-          ),
-          if (_editingName) ...[
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _saveName(settings),
-              onChanged: (_) => setState(() {}),
-              style: TextStyle(fontSize: 16, color: oc.text),
-              decoration: const InputDecoration(
-                labelText: 'Your name',
-                contentPadding: EdgeInsets.all(14),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
+            const SizedBox(height: 18),
+            Container(height: 1, color: ink.withValues(alpha: 0.16)),
+            const SizedBox(height: 14),
+            Row(
               children: [
-                FilledButton(
-                  onPressed: _nameCtrl.text.trim().isEmpty
-                      ? null
-                      : () => _saveName(settings),
-                  child: const Text('Save name'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    _nameCtrl.text = settings.userName;
-                    FocusManager.instance.primaryFocus?.unfocus();
-                    setState(() => _editingName = false);
-                  },
-                  child: const Text('Cancel'),
-                ),
+                stat('${store.transactions.length}', 'ENTRIES'),
+                stat('${store.accounts.length}', 'ACCOUNTS'),
+                stat('$days', days == 1 ? 'DAY TRACKED' : 'DAYS TRACKED'),
               ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -380,7 +496,7 @@ class _SettingsViewState extends State<SettingsView> {
     final tags = store.allTags;
     return sectionCard(
       oc,
-      'Tags',
+      'TAGS',
       Column(
         children: [
           for (int i = 0; i < tags.length; i++) ...[
@@ -527,7 +643,8 @@ class _SettingsViewState extends State<SettingsView> {
                           border: Border.all(color: oc.border, width: 1.5),
                         ),
                         child: Text(
-                          '$symbol${_trimAmount(presets[i])}',
+                          '$symbol'
+                          '${amountInputText(presets[i], settings.currencyCode)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -641,15 +758,6 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-  /// Presets are round numbers by nature, so drop a trailing `.00` rather than
-  /// making every button read `100.00`.
-  static String _trimAmount(double v) {
-    final whole = v.roundToDouble();
-    return (v - whole).abs() < 0.005
-        ? whole.toInt().toString()
-        : v.toStringAsFixed(2);
-  }
-
   Future<void> _editPreset(
     SettingsStore settings,
     List<double> presets,
@@ -657,7 +765,10 @@ class _SettingsViewState extends State<SettingsView> {
     String symbol,
   ) async {
     final oc = context.oc;
-    final ctrl = TextEditingController(text: _trimAmount(presets[index]));
+    final code = settings.currencyCode;
+    final ctrl = TextEditingController(
+      text: amountInputText(presets[index], code),
+    );
     final value = await showDialog<double>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -675,7 +786,7 @@ class _SettingsViewState extends State<SettingsView> {
           controller: ctrl,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [AmountInputFormatter()],
+          inputFormatters: amountFormattersFor(code),
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -696,8 +807,7 @@ class _SettingsViewState extends State<SettingsView> {
             child: Text('CANCEL', style: TextStyle(color: oc.muted)),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(double.tryParse(ctrl.text.trim())),
+            onPressed: () => Navigator.of(ctx).pop(parseAmount(ctrl.text)),
             child: Text('SET', style: TextStyle(color: oc.accent)),
           ),
         ],
@@ -2580,18 +2690,16 @@ class SettingsAvatarAction extends StatelessWidget {
             context,
           ).push(MaterialPageRoute(builder: (_) => const SettingsView()));
         },
+        // HeaderAction supplies the disc, so the initial sits on the same
+        // shape as every other header button.
         child: SizedBox.expand(
           child: Center(
-            child: CircleAvatar(
-              radius: 16,
-              backgroundColor: oc.card,
-              foregroundColor: oc.text,
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+            child: Text(
+              initial,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: oc.text,
               ),
             ),
           ),

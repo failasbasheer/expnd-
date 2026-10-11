@@ -4,6 +4,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var appleIntelligenceBridge: AppleIntelligenceBridge?
+  private var receiptOcrBridge: ReceiptOcrBridge?
 
   override func application(
     _ application: UIApplication,
@@ -15,6 +16,9 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     appleIntelligenceBridge = AppleIntelligenceBridge(
+      messenger: engineBridge.applicationRegistrar.messenger()
+    )
+    receiptOcrBridge = ReceiptOcrBridge(
       messenger: engineBridge.applicationRegistrar.messenger()
     )
   }

@@ -219,108 +219,119 @@ class _ContextCoachSheetState extends State<_ContextCoachSheet> {
     final oc = context.oc;
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
     final source = _answer.source;
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 10, 20, 20 + bottom),
-      decoration: BoxDecoration(
-        color: oc.bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-        border: Border(top: BorderSide(color: oc.border)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: oc.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+      child: SingleChildScrollView(
+        child: Container(
+          padding: EdgeInsets.fromLTRB(20, 10, 20, 20 + bottom),
+          decoration: BoxDecoration(
+            color: oc.bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            border: Border(top: BorderSide(color: oc.border)),
           ),
-          const SizedBox(height: 18),
-          Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(sfIcon(source.icon), size: 18, color: oc.accent),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      source.title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: oc.text,
-                      ),
-                    ),
-                    Text(
-                      source.subtitle,
-                      style: TextStyle(fontSize: 11, color: oc.muted),
-                    ),
-                  ],
+              Align(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: oc.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-              IconButton(
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(context).pop(),
-                icon: Icon(sfIcon('xmark'), size: 17, color: oc.muted),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Icon(sfIcon(source.icon), size: 18, color: oc.accent),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          source.title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: oc.text,
+                          ),
+                        ),
+                        Text(
+                          source.subtitle,
+                          style: TextStyle(fontSize: 11, color: oc.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(sfIcon('xmark'), size: 17, color: oc.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 86),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: oc.surface,
+                  borderRadius: BorderRadius.circular(ExpndRadius.card),
+                  border: Border.all(color: oc.border),
+                ),
+                child: _loading
+                    ? Row(
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: oc.accent,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              source.isAi
+                                  ? 'Thinking on your phone…'
+                                  : 'Loading…',
+                              style: TextStyle(fontSize: 12, color: oc.muted),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        _answer.text,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                          color: oc.text,
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _choice(AiCoachPrompt.focus, 'Focus'),
+                  _choice(AiCoachPrompt.win, 'Good news'),
+                  _choice(AiCoachPrompt.nextStep, 'Next step'),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 86),
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: oc.surface,
-              borderRadius: BorderRadius.circular(ExpndRadius.card),
-              border: Border.all(color: oc.border),
-            ),
-            child: _loading
-                ? Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: oc.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        source.isAi ? 'Thinking on your phone…' : 'Loading…',
-                        style: TextStyle(fontSize: 12, color: oc.muted),
-                      ),
-                    ],
-                  )
-                : Text(
-                    _answer.text,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.45,
-                      fontWeight: FontWeight.w600,
-                      color: oc.text,
-                    ),
-                  ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _choice(AiCoachPrompt.focus, 'Focus'),
-              _choice(AiCoachPrompt.win, 'Good news'),
-              _choice(AiCoachPrompt.nextStep, 'Next step'),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

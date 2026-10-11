@@ -1,9 +1,16 @@
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
-/// Caps a decimal money input so oversized values can't overflow the gauges
-/// and amount labels they feed (net worth, budget ring, account cards, EMI).
-/// Allows up to 7 integer digits; decimal precision follows the field currency.
+/// Largest number of integer digits a money field accepts. Twelve covers
+/// everyday amounts in high-denomination currencies (IDR rent, KRW loans,
+/// INR home loans) while staying well inside double precision.
+const int kMaxAmountIntegerDigits = 12;
+
+/// Validates a decimal money input as it's typed.
+///
+/// A comma is accepted as the decimal separator and normalised to '.', because
+/// the decimal-pad keyboard shows ',' in comma-decimal regions (most of
+/// Europe, Brazil, Turkey, ...). Decimal precision follows the field currency.
 class AmountInputFormatter extends TextInputFormatter {
   final int decimalDigits;
 
@@ -14,18 +21,60 @@ class AmountInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final text = newValue.text;
+    final text = newValue.text.replaceAll(',', '.');
+    const whole = '\\d{0,$kMaxAmountIntegerDigits}';
     final pattern = decimalDigits == 0
-        ? RegExp(r'^\d{0,7}$')
-        : RegExp('^\\d{0,7}(\\.\\d{0,$decimalDigits})?\$');
-    if (text.isEmpty || pattern.hasMatch(text)) return newValue;
+        ? RegExp('^$whole\$')
+        : RegExp('^$whole(\\.\\d{0,$decimalDigits})?\$');
+    if (text.isEmpty || pattern.hasMatch(text)) {
+      return text == newValue.text ? newValue : newValue.copyWith(text: text);
+    }
     // Reject the edit by keeping the previous valid value.
     return oldValue;
   }
 }
 
-/// Shared formatter list for all monetary amount fields.
-const List<TextInputFormatter> amountInputFormatters = [AmountInputFormatter()];
+/// The money-field formatter for [code]'s precision.
+List<TextInputFormatter> amountFormattersFor(String code) => [
+  AmountInputFormatter(decimalDigits: currencyDecimalDigits(code)),
+];
+
+/// Text to pre-fill a money field with [amount]: the currency's precision,
+/// with trailing zeros after the decimal point dropped (100.125 KWD stays
+/// "100.125", 250.40 becomes "250.4", 50000 JPY is "50000"). Returns '' for 0.
+String amountInputText(double amount, String code) {
+  if (amount == 0) return '';
+  var s = amount.toStringAsFixed(currencyDecimalDigits(code));
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  }
+  return s;
+}
+
+/// Parses user-typed money or a rate, accepting ',' as the decimal separator.
+double? parseAmount(String text) =>
+    double.tryParse(text.trim().replaceAll(',', '.'));
+
+/// [amount] rounded down to whole minor units of [code], for "Max" buttons:
+/// rounding 100.2999 up to 100.30 would exceed what's actually available.
+double floorToMinor(double amount, String code) {
+  var factor = 1;
+  for (var i = 0; i < currencyDecimalDigits(code); i++) {
+    factor *= 10;
+  }
+  // Nudge by a hair first so 0.29 (stored as 0.28999...) doesn't floor to 0.28.
+  return (amount * factor + 1e-6).floorToDouble() / factor;
+}
+
+/// [amount] rounded to whole minor units of [code] (cents, fils, ...), so
+/// money can be compared exactly instead of with a float tolerance.
+int toMinorUnits(double amount, String code) {
+  var factor = 1;
+  for (var i = 0; i < currencyDecimalDigits(code); i++) {
+    factor *= 10;
+  }
+  return (amount * factor).round();
+}
 
 class CurrencyOption {
   final String code;
@@ -120,7 +169,7 @@ class AmountPrivacy {
 
   /// Fixed glyph count regardless of the real value, so a masked figure gives
   /// away nothing about its magnitude.
-  static const mask = '••••';
+  static const mask = '●●●●';
 }
 
 /// Formats [amount] like SwiftUI's `.currency(code:)` — symbol + grouped value,
@@ -139,6 +188,11 @@ String formatCurrency(double amount, String code, {bool maskable = true}) {
   );
   return f.format(amount);
 }
+
+/// A whole-number percentage ("63%"), masked with the amounts: a share of a
+/// budget or a month-on-month change says a lot about the hidden figures.
+String formatPercent(num value) =>
+    AmountPrivacy.hidden ? '●●%' : '${value.round()}%';
 
 /// A bare grouped number with two decimals and no currency symbol
 /// (e.g. `1,250.00`). Callers that render their own symbol use this.

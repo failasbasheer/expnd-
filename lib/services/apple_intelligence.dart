@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -58,6 +58,9 @@ class AppleIntelligence {
   static final ValueNotifier<bool> available = ValueNotifier(false);
   static bool _checked = false;
   static Future<bool>? _pendingCheck;
+  // Bounded, memory-only cache. Identical requests share generation work,
+  // including requests started by availability listeners on several screens.
+  static final _answers = <String, Future<CoachAnswer?>>{};
 
   /// Cached availability; only the first call reaches the platform.
   static Future<bool> isAvailable() async {
@@ -69,8 +72,9 @@ class AppleIntelligence {
   /// Call on app resume, since the user may have changed the system setting.
   static Future<bool> refreshAvailability() {
     return _pendingCheck ??= _queryAvailability().then((value) {
-      available.value = value;
       _checked = true;
+      if (available.value != value) _answers.clear();
+      available.value = value;
       _pendingCheck = null;
       return value;
     });
@@ -78,7 +82,7 @@ class AppleIntelligence {
 
   static Future<bool> _queryAvailability() async {
     if (isPreview) return true;
-    if (!Platform.isIOS) return false;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return false;
     try {
       return await _channel.invokeMethod<bool>('isAvailable') ?? false;
     } on MissingPluginException {
@@ -90,9 +94,10 @@ class AppleIntelligence {
 
   @visibleForTesting
   static void resetAvailabilityForTest() {
-    available.value = false;
     _checked = false;
     _pendingCheck = null;
+    _answers.clear();
+    available.value = false;
   }
 
   static Future<CoachAnswer?> summarizeInsights(List<Insight> insights) async {
@@ -157,7 +162,32 @@ class AppleIntelligence {
     required AiCoachPrompt prompt,
   }) async {
     if (insights.isEmpty) return null;
+    await isAvailable();
+    final facts = List<Insight>.unmodifiable(insights);
+    final key = jsonEncode([
+      prompt.wireName,
+      for (final fact in facts) [fact.title, fact.detail, fact.tone.name],
+    ]);
+    final cached = _answers[key];
+    if (cached != null) return cached;
+    if (_answers.length >= 32) _answers.remove(_answers.keys.first);
+    final pending = _generateInsight(facts, prompt: prompt);
+    _answers[key] = pending;
+    final answer = await pending;
+    // An available model can fail transiently. Keep the fallback visible,
+    // but let a later explicit request retry instead of caching the failure.
+    if (answer?.source == CoachSource.rules &&
+        available.value &&
+        identical(_answers[key], pending)) {
+      _answers.remove(key);
+    }
+    return answer;
+  }
 
+  static Future<CoachAnswer?> _generateInsight(
+    List<Insight> insights, {
+    required AiCoachPrompt prompt,
+  }) async {
     if (isPreview) {
       return CoachAnswer(ruleResponse(insights, prompt), CoachSource.preview);
     }
@@ -233,7 +263,7 @@ class AppleIntelligence {
       'Investment': ['dividend', 'broker', 'investment'],
       'Rental Income': ['tenant', 'rental income'],
       'Gift': ['gift'],
-      'Groceries': ['grocery', 'supermarket', 'carrefour', 'lulu'],
+      'Groceries': ['grocery', 'groceries', 'supermarket', 'carrefour', 'lulu'],
       'Food': ['coffee', 'cafe', 'restaurant', 'lunch', 'dinner', 'talabat'],
       'Shopping': ['amazon', 'mall', 'shopping', 'store'],
       'Entertainment': ['cinema', 'movie', 'game', 'concert'],

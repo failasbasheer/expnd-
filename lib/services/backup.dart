@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/models.dart';
+import 'receipts.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 
@@ -46,11 +47,9 @@ Map<String, dynamic> buildBackup(
   final photos = <String, String>{};
   if (embedPhotos) {
     for (final t in store.transactions) {
-      final p = t.photoPath;
-      if (p == null) continue;
-      final f = File(p);
-      if (f.existsSync()) {
-        photos[p.split('/').last] = base64Encode(f.readAsBytesSync());
+      final f = Receipts.fileFor(t.photoPath);
+      if (f != null) {
+        photos[Receipts.storedName(f.path)] = base64Encode(f.readAsBytesSync());
       }
     }
   }
@@ -158,7 +157,7 @@ Future<RestoreSummary> restoreBackup(
     // device — so look for the file where it already lives, both at the
     // recorded path and beside the other restored photos.
     final beside = File('${photoDir.path}/$name');
-    if (File(p).existsSync()) {
+    if (Receipts.fileFor(p) != null) {
       photosRestored++;
     } else if (beside.existsSync()) {
       t.photoPath = beside.path;

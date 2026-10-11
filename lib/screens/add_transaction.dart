@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/receipts.dart';
+import '../services/receipt_ocr.dart';
 import '../services/apple_intelligence.dart';
 import '../services/reminders.dart';
 import '../store/app_store.dart';
@@ -18,6 +20,7 @@ import '../widgets/app_header.dart';
 import '../widgets/disclosure_section.dart';
 import '../widgets/neopop.dart';
 import '../widgets/money_field.dart';
+import '../widgets/segmented_picker.dart';
 
 /// One cell of the category grid — exactly one of [builtin]/[custom] is set.
 /// A single list of these lets built-in and custom categories be sorted
@@ -97,6 +100,30 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   /// Non-empty when this entry is one receipt spread over several categories.
   final List<({double amount, TransactionCategory category, String note})>
   _splitLines = [];
+
+  /// Stable identities for [_splitLines] rows. Without them, removing a line
+  /// left its typed amount showing in the row that slid into its place.
+  final List<int> _splitIds = [];
+  int _nextSplitId = 0;
+
+  void _addSplitLine(
+    ({double amount, TransactionCategory category, String note}) line,
+  ) {
+    _splitLines.add(line);
+    _splitIds.add(_nextSplitId++);
+  }
+
+  void _clearSplitLines() {
+    _splitLines.clear();
+    _splitIds.clear();
+  }
+
+  String get _code => context.read<SettingsStore>().currencyCode;
+
+  /// Whether the split lines add up exactly to the total, in minor units.
+  bool get _splitSettled =>
+      toMinorUnits(_amount, _code) ==
+      _splitLines.fold<int>(0, (s, l) => s + toMinorUnits(l.amount, _code));
 
   bool get _isEditing => widget.editing != null;
 
@@ -184,6 +211,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void _onNoteChanged(String value) {
     setState(() {});
     _categorySuggestionTimer?.cancel();
+    final requestId = ++_categorySuggestionRequest;
     final note = value.trim();
     if (_type == TransactionType.transfer || note.length < 3) {
       if (_aiCategorySuggestion != null) {
@@ -191,7 +219,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       }
       return;
     }
-    final requestId = ++_categorySuggestionRequest;
     _categorySuggestionTimer = Timer(
       const Duration(milliseconds: 420),
       () async {
@@ -281,7 +308,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
   }
 
-  double get _amount => double.tryParse(_amountCtrl.text) ?? 0;
+  double get _amount => parseAmount(_amountCtrl.text) ?? 0;
 
   bool get _isValid {
     if (_amount <= 0) return false;
@@ -293,7 +320,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     // A split carries its own categories, so the single-category rule doesn't
     // apply — but the lines must add up to the receipt total, or the ledger
     // silently gains or loses money.
-    if (_splitLines.isNotEmpty) return _splitRemaining.abs() < 0.005;
+    if (_splitLines.isNotEmpty) return _splitSettled;
     return _category != null || _customCategory != null;
   }
 
@@ -409,7 +436,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _type = result.$1;
         _category = result.$2;
         _customCategory = null;
-        _amountCtrl.text = amount.toStringAsFixed(2);
+        _amountCtrl.text = amountInputText(amount, _code);
       });
       _showBanner('FILLED FROM CLIPBOARD');
     }
@@ -417,15 +444,92 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   // ── Receipt photo ─────────────────────────────────────────────────────────
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery);
-    if (xfile == null || !mounted) return;
-    final dir = await getApplicationDocumentsDirectory();
-    final path =
-        '${dir.path}/receipt_${DateTime.now().microsecondsSinceEpoch}.jpg';
-    await File(xfile.path).copy(path);
+    final String path;
+    try {
+      final xfile = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (xfile == null || !mounted) return;
+      final dir = await getApplicationDocumentsDirectory();
+      path = '${dir.path}/receipt_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(xfile.path).copy(path);
+    } catch (_) {
+      // Photo access denied or the copy failed: nothing was attached.
+      if (mounted) _showBanner('COULDN\'T ATTACH PHOTO · TRY AGAIN');
+      return;
+    }
     if (!mounted) return;
-    setState(() => _photoPath = path);
+    setState(() => _photoPath = Receipts.storedName(path));
+    final ReceiptScan scan;
+    try {
+      scan = await ReceiptOcr.scan(path);
+    } catch (_) {
+      // Text recognition is a convenience; the photo stays attached.
+      if (mounted) _showBanner('RECEIPT ATTACHED · ENTER DETAILS MANUALLY');
+      return;
+    }
+    if (!mounted) return;
+    // Only fill what the user hasn't typed yet; an edited entry keeps its date.
+    final fillNote = scan.merchant != null && _noteCtrl.text.trim().isEmpty;
+    final fillAmount = scan.total != null && _amountCtrl.text.trim().isEmpty;
+    final fillDate = scan.date != null && !_isEditing;
+    if (scan.total == null && scan.merchant == null && scan.date == null) {
+      _showBanner('RECEIPT ATTACHED · NO DETAILS FOUND');
+      return;
+    }
+    if (!fillNote && !fillAmount && !fillDate) {
+      _showBanner('RECEIPT ATTACHED · YOUR ENTRIES KEPT');
+      return;
+    }
+    String status(bool fills) => fills ? 'will be filled' : 'keeps your entry';
+    final useDetails = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Use receipt details?'),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('We read this from the photo:'),
+            const SizedBox(height: 8),
+            if (scan.merchant != null)
+              Text('Note: ${scan.merchant} (${status(fillNote)})'),
+            if (scan.total != null)
+              Text(
+                'Amount: ${formatCurrency(scan.total!, _code)} (${status(fillAmount)})',
+              ),
+            if (scan.date != null)
+              Text(
+                'Date: ${MaterialLocalizations.of(dialogContext).formatMediumDate(scan.date!)} (${status(fillDate)})',
+              ),
+            const SizedBox(height: 12),
+            const Text(
+              'Scans can misread. Check the values on the form and edit them before saving.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep photo only'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Use details'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (useDetails != true) {
+      _showBanner('RECEIPT ATTACHED');
+      return;
+    }
+    setState(() {
+      if (fillNote) _noteCtrl.text = scan.merchant!;
+      if (fillAmount) _amountCtrl.text = amountInputText(scan.total!, _code);
+      if (fillDate) _date = scan.date!;
+    });
+    _showBanner('FILLED FROM RECEIPT · PLEASE REVIEW');
   }
 
   // ── Save ────────────────────────────────────────────────────────────────
@@ -470,6 +574,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     final e = widget.editing;
     if (e != null) {
+      final wasRecurring = e.isRecurring;
+      final previousDue = e.nextDueDate;
+      final scheduleChanged =
+          !wasRecurring || e.recurrenceRule != _rule || e.date != _date;
       e.amount = amount;
       e.category = builtin;
       e.customCategoryId = _customCategory?.id;
@@ -482,8 +590,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       e.tags = List<String>.from(_tags);
       e.accountId = _account?.id;
       e.toAccountId = _type == TransactionType.transfer ? _toAccount?.id : null;
-      if (_isRecurring && e.nextDueDate == null) {
-        e.nextDueDate = _rule.nextDate(_date);
+      if (!_isRecurring) {
+        e.nextDueDate = null;
+      } else if (scheduleChanged || e.nextDueDate == null) {
+        // Restart the schedule from the next occurrence after now. Keeping a
+        // stale due date made re-enabling a series (or moving its date)
+        // backfill every missed occurrence.
+        final now = DateTime.now();
+        var next = _rule.nextDate(_date);
+        while (!next.isAfter(now)) {
+          next = _rule.nextDate(next);
+        }
+        // A live series may already be ahead of that (after "Post now" or
+        // "Skip"); never pull it back, or the skipped occurrence posts again.
+        if (wasRecurring && previousDue != null && previousDue.isAfter(next)) {
+          next = previousDue;
+        }
+        e.nextDueDate = next;
       }
       store.updateTransaction();
     } else {
@@ -703,125 +826,57 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   );
 
   Widget _typeSelector(bool showTransfer) {
+    // The shared segment control; each type keeps its colour (income green,
+    // expense red, transfer gold) so the choice still reads at a glance.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          Expanded(
-            child: _typeButton(
-              TransactionType.income,
-              'Income',
-              'arrow.up',
-              ExpndColors.green,
-              ExpndColors.greenDk,
-            ),
+      child: SegmentedPicker<TransactionType>(
+        height: 44,
+        options: [
+          SegmentOption(
+            value: TransactionType.income,
+            label: 'Income',
+            icon: 'arrow.up',
+            color: ExpndColors.green,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _typeButton(
-              TransactionType.expense,
-              'Expense',
-              'arrow.down',
-              ExpndColors.red,
-              ExpndColors.redDark,
-            ),
+          SegmentOption(
+            value: TransactionType.expense,
+            label: 'Expense',
+            icon: 'arrow.down',
+            color: ExpndColors.red,
+            onColor: Colors.white,
           ),
-          if (showTransfer) ...[
-            const SizedBox(width: 10),
-            Expanded(
-              child: _typeButton(
-                TransactionType.transfer,
-                'Transfer',
-                'arrow.left.arrow.right',
-                ExpndColors.gold,
-                ExpndColors.goldDark,
-              ),
+          if (showTransfer)
+            const SegmentOption(
+              value: TransactionType.transfer,
+              label: 'Transfer',
+              icon: 'arrow.left.arrow.right',
             ),
-          ],
         ],
+        selected: _type,
+        onSelected: _selectType,
       ),
     );
   }
 
-  Widget _typeButton(
-    TransactionType type,
-    String label,
-    String icon,
-    Color active,
-    Color activeDark,
-  ) {
-    final oc = context.oc;
-    final selected = _type == type;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: selected ? active.withValues(alpha: 0.14) : oc.surface,
-        borderRadius: BorderRadius.circular(ExpndRadius.button),
-        border: Border.all(
-          color: selected ? active : oc.border,
-          width: selected ? 1.6 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(ExpndRadius.button),
-        onTap: () {
-          Haptics.light();
-          setState(() {
-            _type = type;
-            _aiCategorySuggestion = null;
-            // Split allocations are type-specific. Never carry stale split
-            // rows across an income/expense/transfer switch.
-            _splitLines.clear();
-            final valid = TransactionCategory.categoriesFor(type);
-            if (_category != null && !valid.contains(_category)) {
-              _category = null;
-            }
-            if (_customCategory != null &&
-                _customCategory!.applicableType != null &&
-                _customCategory!.applicableType != type) {
-              _customCategory = null;
-            }
-          });
-          _onNoteChanged(_noteCtrl.text);
-        },
-        child: Padding(
-          // The three segments share the width equally, so the longest label
-          // ("TRANSFER") plus its icon has to fit a third of the row. The type
-          // below is sized so it does — at 12pt TRANSFER overran its segment,
-          // and letting the FittedBox absorb that rendered it noticeably
-          // smaller than INCOME/EXPENSE, which reads as a mistake across three
-          // sibling buttons. The inset guarantees the same breathing room in
-          // every segment.
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  sfIcon(icon),
-                  size: 13,
-                  color: selected ? oc.text : oc.muted,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    // Keeps the neoPOP wide tracking; 11pt is the size at
-                    // which TRANSFER still clears a third of the row, so
-                    // all three labels render unscaled and identical.
-                    letterSpacing: 1.4,
-                    color: selected ? oc.text : oc.muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  void _selectType(TransactionType type) {
+    setState(() {
+      _type = type;
+      _aiCategorySuggestion = null;
+      // Split allocations are type-specific. Never carry stale split
+      // rows across an income/expense/transfer switch.
+      _clearSplitLines();
+      final valid = TransactionCategory.categoriesFor(type);
+      if (_category != null && !valid.contains(_category)) {
+        _category = null;
+      }
+      if (_customCategory != null &&
+          _customCategory!.applicableType != null &&
+          _customCategory!.applicableType != type) {
+        _customCategory = null;
+      }
+    });
+    _onNoteChanged(_noteCtrl.text);
   }
 
   Widget _sectionBlock(String title, Widget child, {Widget? trailing}) {
@@ -912,7 +967,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GridView.count(
-            crossAxisCount: 3,
+            // A fourth column on wide screens (iPad, landscape) so tiles
+            // stay button-sized instead of growing into big squares.
+            crossAxisCount: MediaQuery.sizeOf(context).width > 520 ? 4 : 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 10,
@@ -1504,11 +1561,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           Haptics.light();
           setState(() {
             if (on) {
-              _splitLines.clear();
+              _clearSplitLines();
             } else {
               // Seed the first line with whatever's already selected, so
               // turning it on never throws away the user's work.
-              _splitLines.add((
+              _addSplitLine((
                 amount: _amount,
                 category: _category ?? TransactionCategory.other,
                 note: _noteCtrl.text.trim(),
@@ -1544,7 +1601,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   Widget _splitSection(ExpndColors oc) {
     final remaining = _splitRemaining;
-    final settled = remaining.abs() < 0.005;
+    final settled = _splitSettled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -1561,7 +1618,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
           const SizedBox(height: 10),
           for (int i = 0; i < _splitLines.length; i++) ...[
-            _splitLineRow(oc, i),
+            KeyedSubtree(
+              key: ValueKey(_splitIds[i]),
+              child: _splitLineRow(oc, i),
+            ),
             const SizedBox(height: 8),
           ],
           GestureDetector(
@@ -1569,7 +1629,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             onTap: () {
               Haptics.light();
               setState(
-                () => _splitLines.add((
+                () => _addSplitLine((
                   // Default the new line to whatever is still unallocated,
                   // which is almost always what the user is about to type.
                   amount: remaining > 0 ? remaining : 0,
@@ -1612,8 +1672,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               ),
               const Spacer(),
               Text(
-                '$_symbol${_splitAllocated.toStringAsFixed(2)} of '
-                '$_symbol${_amount.toStringAsFixed(2)}',
+                '${formatCurrency(_splitAllocated, _code)} of '
+                '${formatCurrency(_amount, _code)}',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -1626,8 +1686,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 4),
             Text(
               remaining > 0
-                  ? '$_symbol${remaining.toStringAsFixed(2)} still to allocate'
-                  : '$_symbol${(-remaining).toStringAsFixed(2)} over the total',
+                  ? '${formatCurrency(remaining, _code)} still to allocate'
+                  : '${formatCurrency(-remaining, _code)} over the total',
               style: TextStyle(fontSize: 11, color: ExpndColors.red),
             ),
           ],
@@ -1698,16 +1758,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             ),
             child: TextFormField(
               initialValue: line.amount > 0
-                  ? line.amount.toStringAsFixed(2)
+                  ? amountInputText(line.amount, _code)
                   : '',
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              inputFormatters: amountInputFormatters,
+              inputFormatters: amountFormattersFor(_code),
               textAlign: TextAlign.right,
               onChanged: (v) => setState(
                 () => _splitLines[index] = (
-                  amount: double.tryParse(v) ?? 0,
+                  amount: parseAmount(v) ?? 0,
                   category: line.category,
                   note: line.note,
                 ),
@@ -1732,7 +1792,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         GestureDetector(
           onTap: () {
             Haptics.light();
-            setState(() => _splitLines.removeAt(index));
+            setState(() {
+              _splitLines.removeAt(index);
+              _splitIds.removeAt(index);
+            });
           },
           child: Padding(
             padding: const EdgeInsets.only(left: 6),
@@ -2272,14 +2335,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            if (_photoPath != null && File(_photoPath!).existsSync())
+            if (Receipts.fileFor(_photoPath) != null)
               Stack(
                 clipBehavior: Clip.none,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.file(
-                      File(_photoPath!),
+                      Receipts.fileFor(_photoPath)!,
                       width: 80,
                       height: 80,
                       fit: BoxFit.cover,
@@ -3273,7 +3336,9 @@ class _ScanConfirmSheetState extends State<_ScanConfirmSheet> {
                 ),
                 const SizedBox(height: 8),
                 GridView.count(
-                  crossAxisCount: 3,
+                  crossAxisCount: MediaQuery.sizeOf(context).width > 520
+                      ? 4
+                      : 3,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 10,

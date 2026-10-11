@@ -178,14 +178,126 @@ class AppStore extends ChangeNotifier {
 
   /// Net-worth contribution: assets are positive, credit-card liabilities are
   /// negative and include both posted spending and active EMI principal.
-  double netWorthFor(Account acc) =>
-      acc.type == AccountType.credit ? -creditUsedFor(acc) : balanceFor(acc);
+  ///
+  /// Unlike [creditUsedFor], a card's balance isn't floored at 0 here: an
+  /// overpaid card holds a credit that belongs to the user, so moving money
+  /// onto it from their own bank must leave net worth unchanged.
+  double netWorthFor(Account acc) {
+    if (acc.type != AccountType.credit) return balanceFor(acc);
+    final emi = emisForAccount(
+      acc.id,
+    ).where((e) => e.isActive).fold(0.0, (s, e) => s + e.outstandingPrincipal);
+    return -(balanceFor(acc) + emi);
+  }
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   void addTransaction(Transaction t) {
     _transactions.add(t);
     _persist();
+  }
+
+  /// Purchases awaiting money back. This metadata never changes the ledger.
+  List<Transaction> get reimbursablePurchases => transactions
+      .where(
+        (t) =>
+            t.type == TransactionType.expense &&
+            t.reimbursementExpected != null &&
+            t.reimbursementExpected! > 0,
+      )
+      .toList();
+
+  void trackReimbursement(
+    Transaction purchase, {
+    required double expected,
+    required String from,
+  }) {
+    if (!_transactions.contains(purchase) ||
+        purchase.type != TransactionType.expense ||
+        !expected.isFinite ||
+        expected <= 0 ||
+        expected > purchase.amount - returnedFor(purchase, kind: 'refund') ||
+        expected < returnedFor(purchase, kind: 'reimbursement') ||
+        from.trim().isEmpty) {
+      throw ArgumentError(
+        'Enter a valid purchase, amount, and person or source.',
+      );
+    }
+    purchase.reimbursementExpected = expected;
+    purchase.reimbursementFrom = from.trim();
+    _persist();
+  }
+
+  void stopTrackingReimbursement(Transaction purchase) {
+    purchase.reimbursementExpected = null;
+    purchase.reimbursementFrom = null;
+    _persist();
+  }
+
+  List<Transaction> returnsFor(Transaction purchase, {String? kind}) =>
+      transactions
+          .where(
+            (t) =>
+                t.type == TransactionType.income &&
+                t.relatedPurchaseId == purchase.id &&
+                (kind == null || t.relatedPurchaseKind == kind),
+          )
+          .toList();
+
+  double returnedFor(Transaction purchase, {String? kind}) =>
+      returnsFor(purchase, kind: kind).fold(0, (sum, t) => sum + t.amount);
+
+  double reimbursementOutstanding(Transaction purchase) {
+    final expected =
+        (purchase.reimbursementExpected ?? 0) -
+        returnedFor(purchase, kind: 'reimbursement');
+    final purchaseRemaining = purchase.amount - returnedFor(purchase);
+    return expected.clamp(0, purchaseRemaining.clamp(0, double.infinity));
+  }
+
+  /// Record money that actually arrived. Income stays attached to an account
+  /// and is linked to its original expense for history and remaining amounts.
+  Transaction recordPurchaseReturn(
+    Transaction purchase, {
+    required double amount,
+    required String accountId,
+    required String kind,
+  }) {
+    if (!_transactions.contains(purchase) ||
+        purchase.type != TransactionType.expense ||
+        accountFor(accountId) == null ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        (kind != 'refund' && kind != 'reimbursement')) {
+      throw ArgumentError(
+        'Choose a valid purchase, amount, account, and return type.',
+      );
+    }
+    final purchaseAccount = accountFor(purchase.accountId);
+    if (purchaseAccount != null &&
+        accountFor(accountId)!.currencyCode != purchaseAccount.currencyCode) {
+      throw ArgumentError('Use an account in the purchase currency.');
+    }
+    final cap = kind == 'refund'
+        ? purchase.amount - returnedFor(purchase)
+        : reimbursementOutstanding(purchase);
+    if (amount > cap + 0.000001) {
+      throw ArgumentError('Amount exceeds what is still expected.');
+    }
+    final returned = Transaction(
+      note: kind == 'refund'
+          ? 'Refund: ${purchase.note}'
+          : 'Reimbursement: ${purchase.note}',
+      amount: amount,
+      category: purchase.category,
+      type: TransactionType.income,
+      accountId: accountId,
+      relatedPurchaseId: purchase.id,
+      relatedPurchaseKind: kind,
+    );
+    _transactions.add(returned);
+    _persist();
+    return returned;
   }
 
   void updateTransaction() {
@@ -210,6 +322,8 @@ class AppStore extends ChangeNotifier {
     posted.accountId = source.accountId;
     posted.toAccountId = source.toAccountId;
     posted.customCategoryId = source.customCategoryId;
+    // Same as an auto-posted occurrence, so a subscription charge stays tagged.
+    posted.tags = List<String>.from(source.tags);
     _transactions.add(posted);
     final due = source.nextDueDate;
     if (due != null) {
@@ -641,11 +755,27 @@ class AppStore extends ChangeNotifier {
     TransactionCategory? category,
   }) {
     if (baseLimit <= 0) return baseLimit;
+    // Nothing logged before this month (a new install, or a fresh ledger)
+    // means there's no real last month to carry from — not an empty one
+    // worth a doubled budget.
+    final start = DateTime(month.year, month.month);
+    if (!_transactions.any((t) => t.date.isBefore(start))) return baseLimit;
     final prev = DateTime(month.year, month.month - 1);
     final carried = baseLimit - spentInMonth(prev, category: category);
     final effective = baseLimit + carried;
     return effective < 0 ? 0 : effective;
   }
+
+  /// The monthly limit actually in force for [month]: [baseLimit], adjusted by
+  /// last month when [rollover] is on. Every screen, insight, alert and the
+  /// widget must use this, or they contradict each other.
+  double effectiveMonthlyBudget(
+    double baseLimit, {
+    required bool rollover,
+    DateTime? month,
+  }) => rollover
+      ? rolledOverLimit(baseLimit, month ?? DateTime.now())
+      : baseLimit;
 
   void addGoal(SavingsGoal g) {
     _goals.add(g);
@@ -682,12 +812,18 @@ class AppStore extends ChangeNotifier {
   /// spent money that was set aside.
   double unallocatedIn(Account acc) => balanceFor(acc) - claimedIn(acc);
 
-  /// The most a goal could add to its claim right now.
+  /// The most a goal could add to its claim right now: what its account has
+  /// spare, but never more than the goal still needs. A credit card holds
+  /// debt, not savings, so it never has anything to set aside.
   double availableToAllocate(SavingsGoal g) {
     final acc = accountFor(g.accountId);
-    if (acc == null) return 0;
+    if (acc == null || acc.type == AccountType.credit) return 0;
     final free = unallocatedIn(acc);
-    return free < 0 ? 0 : free;
+    final needed = g.targetAmount > 0
+        ? g.targetAmount - g.allocatedAmount
+        : double.infinity;
+    final cap = free < needed ? free : needed;
+    return cap < 0 ? 0 : cap;
   }
 
   /// Sets aside [amount] more of the holding account's balance for this goal,
@@ -811,6 +947,7 @@ class AppStore extends ChangeNotifier {
         posted.accountId = t.accountId;
         posted.toAccountId = t.toAccountId;
         posted.customCategoryId = t.customCategoryId;
+        posted.tags = List<String>.from(t.tags);
         _transactions.add(posted);
         generated.add(posted);
         due = t.recurrenceRule.nextDate(due);

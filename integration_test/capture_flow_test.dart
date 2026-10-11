@@ -29,6 +29,7 @@ import 'package:expnd/services/capture_inbox.dart';
 import 'package:expnd/services/widget_bridge.dart';
 import 'package:expnd/store/app_store.dart';
 import 'package:expnd/store/settings_store.dart';
+import 'package:expnd/theme/expnd_theme.dart';
 
 late final IntegrationTestWidgetsFlutterBinding binding;
 
@@ -46,6 +47,37 @@ Future<void> _seedQueue(List<Map<String, Object>> entries) async {
 
 Future<String> _readQueue() async =>
     await HomeWidget.getWidgetData<String>(CaptureInbox.queueKey) ?? '';
+
+List<String> _decodeIds(String? raw) {
+  if (raw == null || raw.isEmpty) return const [];
+  final decoded = jsonDecode(raw);
+  if (decoded is! List) return const [];
+  return [
+    for (final e in decoded)
+      if (e is String)
+        e
+      else if (e is Map && e['id'] is String)
+        e['id'] as String,
+  ];
+}
+
+/// The ids still waiting to be drained, read the way CaptureQueue.swift's
+/// `read()` does: the raw queue minus the tombstones in
+/// [CaptureInbox.consumedKey]. Acknowledgement adds tombstones rather than
+/// rewriting the queue (so a widget append mid-drain can't be clobbered), and
+/// the widget prunes the tombstoned entries on its next append.
+Future<List<String>> _pendingIds() async {
+  final consumed = _decodeIds(
+    await HomeWidget.getWidgetData<String>(CaptureInbox.consumedKey),
+  ).toSet();
+  return _decodeIds(
+    await _readQueue(),
+  ).where((id) => !consumed.contains(id)).toList();
+}
+
+Future<List<String>> _consumedIds() async => _decodeIds(
+  await HomeWidget.getWidgetData<String>(CaptureInbox.consumedKey),
+);
 
 Map<String, Object> _entry(
   String id,
@@ -67,7 +99,8 @@ Widget _wrap(Widget home) => MultiProvider(
   ],
   child: MaterialApp(
     debugShowCheckedModeBanner: false,
-    darkTheme: ThemeData(brightness: Brightness.dark),
+    theme: buildExpndTheme(Brightness.light),
+    darkTheme: buildExpndTheme(Brightness.dark),
     themeMode: ThemeMode.dark,
     home: home,
   ),
@@ -102,8 +135,10 @@ void main() {
       ),
     );
     await HomeWidget.setAppGroupId(WidgetBridge.appGroupId);
-    // Leave no queue behind from a previous run.
+    // Leave no queue (or acknowledgement tombstones) behind from a previous
+    // run, or the fixed ids below would read as already consumed.
     await HomeWidget.saveWidgetData<String>(CaptureInbox.queueKey, '');
+    await HomeWidget.saveWidgetData<String>(CaptureInbox.consumedKey, '');
   });
 
   testWidgets('the App Group round-trips a capture into the inbox', (
@@ -127,8 +162,12 @@ void main() {
     // Captured, but deliberately not money yet.
     expect(_store.transactions, isEmpty);
     expect(_store.balanceFor(_store.accounts.first), 500);
-    // Acknowledged, so the next launch doesn't see them again.
-    expect(await _readQueue(), isEmpty);
+    // Acknowledged, so neither the next launch nor the widget's pending
+    // count sees them again.
+    expect(await _consumedIds(), containsAll(['cap-int-1', 'cap-int-2']));
+    expect(await _pendingIds(), isEmpty);
+    expect(await CaptureInbox.drain(_store), 0);
+    expect(_store.pendingCaptures.length, 2);
   }, skip: !Platform.isIOS);
 
   testWidgets('a capture appended mid-drain is not swallowed', (tester) async {
@@ -140,13 +179,15 @@ void main() {
     await _seedQueue([_entry('cap-int-1', 500), _entry('cap-int-2', 75)]);
     final taken = await CaptureInbox.drain(_store);
 
-    // Only the new one is new — the replayed id is skipped, not duplicated.
-    expect(taken, 2);
+    // Only the new one is taken — the already-acknowledged id is skipped,
+    // not duplicated.
+    expect(taken, 1);
     expect(_store.pendingCaptures.length, 2);
     expect(
       _store.pendingCaptures.map((c) => c.id),
       containsAll(['cap-int-1', 'cap-int-2']),
     );
+    expect(await _pendingIds(), isEmpty);
   }, skip: !Platform.isIOS);
 
   testWidgets('the dashboard surfaces them and the inbox lists them', (

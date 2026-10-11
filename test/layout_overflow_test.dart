@@ -1,3 +1,8 @@
+import 'package:expnd/screens/money_checkup_view.dart';
+import 'package:expnd/screens/cash_flow_view.dart';
+import 'package:expnd/screens/subscriptions_view.dart';
+import 'package:expnd/screens/reconciliation_view.dart';
+import 'package:expnd/screens/reimbursements_view.dart';
 // Every screen, laid out at the narrowest phone we support and again with the
 // system text size turned up, must not overflow. A "RIGHT OVERFLOWED BY 2.0
 // PIXELS" stripe is a shipping bug — it only ever shows up on someone else's
@@ -49,13 +54,13 @@ class _FakeBox implements Box {
 
 /// A dataset with the shapes that actually break layouts: a long account name,
 /// a six-figure balance, a credit card with a limit, every transaction type.
-Future<AppStore> _seeded() async {
+Future<AppStore> _seeded({bool stressData = false}) async {
   final store = AppStore(_FakeBox());
   final checking = Account(
     name: 'HDFC Checking Account',
     type: AccountType.bank,
     currencyCode: 'USD',
-    balance: 64000,
+    balance: stressData ? 123456789.12 : 64000,
   );
   final savings = Account(
     name: 'Emergency Fund',
@@ -67,13 +72,14 @@ Future<AppStore> _seeded() async {
     name: 'ICICI Amazon Pay',
     type: AccountType.credit,
     currencyCode: 'USD',
-    balance: 18400,
-    creditLimit: 150000,
+    balance: stressData ? 98765432.10 : 18400,
+    creditLimit: stressData ? 150000000.20 : 150000,
   );
   for (final a in [checking, savings, card]) {
     store.addAccount(a);
   }
 
+  final today = DateTime.now();
   const cats = [
     TransactionCategory.groceries,
     TransactionCategory.food,
@@ -89,7 +95,7 @@ Future<AppStore> _seeded() async {
         amount: 120.0 * (i + 1),
         category: cats[i % cats.length],
         type: TransactionType.expense,
-        date: DateTime(2026, 7, 22).subtract(Duration(days: i)),
+        date: DateTime(today.year, today.month, 1 + i % today.day),
         accountId: checking.id,
       ),
     );
@@ -100,7 +106,7 @@ Future<AppStore> _seeded() async {
       amount: 285000,
       category: TransactionCategory.salary,
       type: TransactionType.income,
-      date: DateTime(2026, 7, 1),
+      date: DateTime(today.year, today.month, 1),
       accountId: checking.id,
     ),
   );
@@ -109,29 +115,42 @@ Future<AppStore> _seeded() async {
     amount: 24000,
     category: TransactionCategory.rent,
     type: TransactionType.expense,
-    date: DateTime(2026, 8, 1),
+    date: today.add(const Duration(days: 7)),
     accountId: checking.id,
     isRecurring: true,
     recurrenceRule: RecurrenceRule.monthly,
   );
-  rent.nextDueDate = DateTime(2026, 8, 1);
+  rent.nextDueDate = today.add(const Duration(days: 7));
   store.addTransaction(rent);
   store.addGoal(
     SavingsGoal(
-      name: 'Emergency savings fund',
-      targetAmount: 10000,
-      allocatedAmount: 2500,
+      name: stressData
+          ? 'Emergency savings fund for a long goal name'
+          : 'Emergency savings fund',
+      targetAmount: stressData ? 123456789.12 : 10000,
+      allocatedAmount: stressData ? 23456789.10 : 2500,
       iconName: 'shield.fill',
       colorHex: '057A55',
     ),
   );
   store.addDebt(
     Debt(
-      person: 'A long contact name',
-      amount: 1200,
+      person: stressData
+          ? 'A very long contact name for the lending ledger'
+          : 'A long contact name',
+      amount: stressData ? 123456789.12 : 1200,
       theyOweMe: true,
       date: DateTime.now(),
       accountId: checking.id,
+    ),
+  );
+  store.addEmi(
+    Emi(
+      accountId: checking.id,
+      name: stressData ? 'A very long home improvement loan name' : 'Home loan',
+      principal: stressData ? 123456789.12 : 12000,
+      annualRate: 6,
+      tenureMonths: 36,
     ),
   );
   store.addPendingCaptures([
@@ -193,10 +212,11 @@ Future<void> _audit(
   WidgetTester tester,
   String screen,
   Widget Function() build, {
+  bool stressData = false,
   Future<void> Function(WidgetTester)? after,
 }) async {
   final found = <String, _Overflow>{};
-  final store = await _seeded();
+  final store = await _seeded(stressData: stressData);
   SharedPreferences.setMockInitialValues({});
   final settings = await SettingsStore.create();
   settings.monthlyBudget = 3000;
@@ -252,6 +272,23 @@ Future<void> _audit(
         await tester.pumpAndSettle();
         if (after != null) await after(tester);
         await tester.pumpAndSettle();
+        final scrollables = find.byType(Scrollable);
+        for (final element in scrollables.evaluate().toList()) {
+          if (!element.mounted) continue;
+          final state = (element as StatefulElement).state as ScrollableState;
+          if (axisDirectionToAxis(state.axisDirection) != Axis.vertical) {
+            continue;
+          }
+          for (var step = 0; step < 12; step++) {
+            if (!element.mounted || !state.position.hasContentDimensions) break;
+            final position = state.position;
+            if (position.pixels >= position.maxScrollExtent) break;
+            position.jumpTo(
+              (position.pixels + 500).clamp(0, position.maxScrollExtent),
+            );
+            await tester.pumpAndSettle();
+          }
+        }
       }
     }
   }
@@ -265,6 +302,27 @@ Future<void> _audit(
 }
 
 void main() {
+  final planningScreens = <String, Widget Function()>{
+    'purchase preview': () => const PurchasePreviewView(),
+    'monthly review': () => const MonthlyReviewView(),
+    'payday planning': () => const CashFlowView(),
+    'subscriptions': () => const SubscriptionManagerView(),
+    'reconciliation': () => const ReconciliationView(),
+    'reimbursements': () => const ReimbursementsView(),
+  };
+  for (final entry in planningScreens.entries) {
+    testWidgets(entry.key, (tester) => _audit(tester, entry.key, entry.value,
+      stressData: true));
+  }
+  testWidgets('purchase preview with amount', (tester) => _audit(
+    tester, 'purchase preview with amount', () => const PurchasePreviewView(),
+    stressData: true,
+    after: (tester) async {
+      await tester.enterText(find.byType(TextField).first, '12345678');
+      await tester.pumpAndSettle();
+    },
+  ));
+
   for (final sheet in ['transaction detail', 'add loan']) {
     testWidgets(
       sheet,
@@ -344,7 +402,7 @@ void main() {
         task,
         () => const PlanView(),
         after: (tester) async {
-          await tester.tap(find.widgetWithText(ChoiceChip, task));
+          await tester.tap(find.bySemanticsLabel(task));
         },
       ),
     );
@@ -409,13 +467,74 @@ void main() {
         if (toggle.evaluate().isEmpty) return;
         await tester.tap(toggle.first);
         await tester.pumpAndSettle();
+        final scrollables = find.byType(Scrollable);
+        for (final element in scrollables.evaluate().toList()) {
+          if (!element.mounted) continue;
+          final state = (element as StatefulElement).state as ScrollableState;
+          if (axisDirectionToAxis(state.axisDirection) != Axis.vertical) {
+            continue;
+          }
+          for (var step = 0; step < 12; step++) {
+            if (!element.mounted || !state.position.hasContentDimensions) break;
+            final position = state.position;
+            if (position.pixels >= position.maxScrollExtent) break;
+            position.jumpTo(
+              (position.pixels + 500).clamp(0, position.maxScrollExtent),
+            );
+            await tester.pumpAndSettle();
+          }
+        }
       },
     ),
   );
 
   testWidgets('wallet', (t) => _audit(t, 'wallet', () => const WalletView()));
 
+  testWidgets(
+    'wallet with large balances and loan',
+    (t) => _audit(
+      t,
+      'wallet with large balances and loan',
+      () => const WalletView(),
+      stressData: true,
+    ),
+  );
+
+  testWidgets(
+    'credit summary with large amounts',
+    (t) => _audit(
+      t,
+      'credit summary with large amounts',
+      () => Scaffold(
+        body: Builder(
+          builder: (context) => SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: AccountLoansSection(
+              account: context.read<AppStore>().accounts.last,
+            ),
+          ),
+        ),
+      ),
+      stressData: true,
+    ),
+  );
+
   testWidgets('plan', (t) => _audit(t, 'plan', () => const PlanView()));
+
+  for (final task in ['Savings goals', 'Debts & loans']) {
+    testWidgets(
+      'plan with large values: $task',
+      (t) => _audit(
+        t,
+        'plan with large values: $task',
+        () => const PlanView(),
+        stressData: true,
+        after: (tester) async {
+          await tester.tap(find.bySemanticsLabel(task));
+        },
+      ),
+    );
+  }
 
   testWidgets(
     'settings',

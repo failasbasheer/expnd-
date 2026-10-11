@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/models.dart';
+import 'cash_flow.dart';
 import '../store/app_store.dart';
 import '../store/settings_store.dart';
 import '../theme/currencies.dart';
@@ -27,6 +28,9 @@ class WidgetBridge {
 
   /// WidgetKit widget kind (the `kind:` string in the Swift widget).
   static const _iOSWidgetName = 'ExpndWidget';
+
+  /// The Quick Log widget's kind (QuickLogWidget.swift).
+  static const _iOSQuickLogWidgetName = 'ExpndQuickLogWidget';
 
   /// Fully-qualified Android provider so `updateWidget` can target it.
   static const _androidProvider = 'com.failas.expnd.ExpndWidgetProvider';
@@ -72,13 +76,17 @@ class WidgetBridge {
     final code = settings.currencyCode;
     final now = DateTime.now();
 
-    final monthSpent = store.spentInMonth(now);
+    final isCalendar = settings.budgetCycle == 'calendar';
+    final monthSpent = budgetSpentInPeriod(
+      store,
+      budgetPeriodFor(settings, now),
+    );
 
     // Same effective limit as the Plan gauge: base budget plus last month's
     // leftover when rollover is on. The widget leads with what's left rather
     // than net worth, which is too revealing on a glanceable Home Screen.
     final base = settings.monthlyBudget;
-    final budget = settings.budgetRollover && base > 0
+    final budget = isCalendar && settings.budgetRollover && base > 0
         ? store.rolledOverLimit(base, now)
         : base;
     final ratio = budget > 0 ? (monthSpent / budget).clamp(0.0, 1.0) : -1.0;
@@ -109,7 +117,7 @@ class WidgetBridge {
         HomeWidget.saveWidgetData('over_budget', budget > 0 && left < 0),
         HomeWidget.saveWidgetData(
           'month_label',
-          _monthName(now.month).toUpperCase(),
+          isCalendar ? _monthName(now.month).toUpperCase() : 'THIS PERIOD',
         ),
         HomeWidget.saveWidgetData(
           'month_spent',
@@ -156,6 +164,11 @@ class WidgetBridge {
         iOSName: _iOSWidgetName,
         qualifiedAndroidName: _androidProvider,
       );
+      // `updateWidget` reloads one WidgetKit kind; the Quick Log widget has
+      // its own and a `.never` policy, so it went stale without this.
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        await HomeWidget.updateWidget(iOSName: _iOSQuickLogWidgetName);
+      }
     } catch (e) {
       debugPrint('WidgetBridge.sync failed: $e');
     }

@@ -401,179 +401,188 @@ class NeoPopStatCard extends StatelessWidget {
     final footer = oc.card;
     final line = oc.border;
     final popWhite = oc.text;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: panel,
-            border: Border.all(color: line, width: 0.5),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
+    // Rounded like the app's other cards: one outer border drawn over a
+    // clipped body, with a hairline between body and footer.
+    final radius = BorderRadius.circular(ExpndRadius.card);
+    return Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(color: line),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: panel,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  NeoPopScoreGauge(
-                    progress: progress,
-                    centerText: gaugeText,
-                    arcColor: statusColor,
-                    trackColor: line,
-                    centerTextColor: popWhite,
-                  ),
-                  if (minLabel != null || maxLabel != null) ...[
-                    const SizedBox(height: 12),
-                    // Wider than the 90pt gauge so the max label (e.g. "$3,000")
-                    // renders in full at boosted text sizes instead of "$3,00…".
-                    SizedBox(
-                      width: 100,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              minLabel ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
-                                color: oc.dimmed,
+                  Column(
+                    children: [
+                      NeoPopScoreGauge(
+                        progress: progress,
+                        centerText: gaugeText,
+                        arcColor: statusColor,
+                        trackColor: line,
+                        centerTextColor: popWhite,
+                      ),
+                      if (minLabel != null || maxLabel != null) ...[
+                        const SizedBox(height: 12),
+                        // Wider than the 90pt gauge so the max label (e.g. "$3,000")
+                        // renders in full at boosted text sizes instead of "$3,00…".
+                        SizedBox(
+                          width: 100,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  minLabel ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0,
+                                    color: oc.dimmed,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  maxLabel ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0,
+                                    color: oc.dimmed,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              maxLabel ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
-                                color: oc.dimmed,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          statusLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                            color: statusColor,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.2,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.4,
+                            color: popWhite,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.4,
+                            color: oc.muted,
+                          ),
+                        ),
+                        if (ctaLabel != null) ...[
+                          const SizedBox(height: 20),
+                          GestureDetector(
+                            onTap: onCta,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ExpndColors.ink,
+                                border: Border.all(color: Colors.white, width: 1),
+                              ),
+                              child: Text(
+                                ctaLabel!,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            if (footerText != null)
+              Container(
+                decoration: BoxDecoration(
+                  color: footer,
+                  border: Border(top: BorderSide(color: line)),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      statusLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
                         color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.autorenew_rounded,
+                        size: 11,
+                        color: Colors.black,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.2,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.4,
-                        color: popWhite,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.4,
-                        color: oc.muted,
-                      ),
-                    ),
-                    if (ctaLabel != null) ...[
-                      const SizedBox(height: 20),
-                      GestureDetector(
-                        onTap: onCta,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ExpndColors.ink,
-                            border: Border.all(color: Colors.white, width: 1),
-                          ),
-                          child: Text(
-                            ctaLabel!,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                              color: Colors.white,
-                            ),
-                          ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        footerText!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                          color: popWhite,
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
+          ],
         ),
-        if (footerText != null)
-          Container(
-            decoration: BoxDecoration(
-              color: footer,
-              border: Border.all(color: line, width: 0.5),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.autorenew_rounded,
-                    size: 11,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    footerText!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                      color: popWhite,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
+      ),
     );
   }
 }

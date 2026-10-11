@@ -14,7 +14,7 @@ import '../widgets/neopop.dart';
 /// The app dropped `package_info_plus`, so there's no runtime build number to
 /// key off — this hand-maintained int is the source of truth. Increment it (and
 /// refresh [_features]) with every update that's worth telling people about.
-const int kWhatsNewVersion = 2;
+const int kWhatsNewVersion = 3;
 
 /// Pushes the What's New carousel and records that this version was seen once
 /// it's dismissed — whether the user stepped through every page or skipped.
@@ -39,46 +39,37 @@ class _Feature {
 /// can take in at a glance is a page people actually read.
 const List<_Feature> _features = [
   _Feature(
-    'bell.fill',
-    'Reminders, your way',
-    'Write your own nudge, pick a tone and choose the days — plus alerts '
-        'for a bill due tomorrow, going over budget, or a goal reached. '
-        'All on-device.',
-  ),
-  _Feature(
     'calendar.badge.clock',
-    'See what’s coming',
-    'Your bills, subscriptions and EMIs for the next 30 days — with a '
-        'safe-to-spend figure.',
+    'Budget around payday',
+    'See what is safe to spend until your next payday, after bills and '
+        'savings. Budgets can follow the calendar, your payday, or a weekly '
+        'or fortnightly pay cycle.',
   ),
   _Feature(
-    'arrow.left.arrow.right',
-    'Loans & lending',
-    'Track EMIs and money you’ve lent or borrowed, and log repayments '
-        'as they happen.',
+    'repeat',
+    'Every subscription in one place',
+    'See what each one costs you a year and get a nudge before a free trial '
+        'ends. EXPND can spot likely subscriptions in your history for you to '
+        'confirm.',
   ),
   _Feature(
-    'bolt.fill',
-    'Smart insights',
-    'Your dashboard now flags budgets running hot and unusual spending '
-        'before they surprise you.',
+    'camera.fill',
+    'Scan a receipt',
+    'Add a receipt photo and EXPND fills in the merchant, date and total. It '
+        'all happens on your phone, and you check the details before saving.',
   ),
   _Feature(
-    'lock.shield.fill',
-    'Back up everything',
-    'Save your whole ledger to one file and restore it on a new phone. '
-        'It never leaves your device.',
+    'checkmark.seal.fill',
+    'Money tools in Plan',
+    'Preview a purchase before you buy, review your month and export it as '
+        'CSV, match an account to your statement, and track refunds and money '
+        'owed back to you.',
   ),
   _Feature(
-    'chart.pie.fill',
-    'Tags & split receipts',
-    'Tag spending across categories, and split one receipt into the '
-        'things it was really for.',
-  ),
-  _Feature(
-    'eye.slash',
-    'Hide your balances',
-    'Tap the eye to mask every amount on screen.',
+    'sparkles',
+    'A bolder, calmer EXPND',
+    'A new icon, a bolder NeoPOP look and a quicker, quieter launch. Hiding '
+        'amounts now hides percentages too.',
   ),
 ];
 
@@ -180,7 +171,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Your first update — shaped by your feedback',
+              'Shaped by your feedback',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,

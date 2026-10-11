@@ -73,7 +73,8 @@ void main() {
       t.getSize(find.byWidget(scaffold.bottomNavigationBar!)).height,
       lessThan(130),
     );
-    expect(find.text('Plan'), findsWidgets);
+    // NeoPOP caps tab labels, as shipped in 1.0.
+    expect(find.text('PLAN'), findsWidgets);
     expect(find.text('PROFILE'), findsNothing);
   });
 
@@ -127,7 +128,7 @@ void main() {
     await t.pumpWidget(await _app(const SettingsView()));
     await t.pumpAndSettle();
 
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('SETTINGS'), findsOneWidget);
     expect(find.text('General'), findsOneWidget);
     expect(find.text('Data'), findsOneWidget);
     expect(find.text('CUSTOM CATEGORIES'), findsNothing);
@@ -152,5 +153,17 @@ void main() {
     // Flush to the header's right gutter rather than floating mid-row.
     final header = t.getRect(find.byType(ExpndHeader));
     expect(header.right - avatar.right, closeTo(ExpndHeaderMetrics.gutter, 4));
+  });
+
+  testWidgets('switching tabs keeps each tab\'s state', (t) async {
+    _sizeView(t);
+    await t.pumpWidget(await _app(const HomeShell()));
+    await t.pumpAndSettle();
+    final before = t.state(find.byType(Scrollable).first);
+    await t.tap(find.text('ANALYTICS').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('HOME').last);
+    await t.pumpAndSettle();
+    expect(t.state(find.byType(Scrollable).first), same(before));
   });
 }

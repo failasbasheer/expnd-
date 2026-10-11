@@ -21,6 +21,7 @@ import 'package:expnd/models/models.dart';
 import 'package:expnd/store/app_store.dart';
 import 'package:expnd/store/settings_store.dart';
 import 'package:expnd/theme/expnd_theme.dart';
+import 'package:expnd/widgets/readable_column.dart';
 
 import 'package:expnd/screens/home_shell.dart';
 import 'package:expnd/screens/history_view.dart';
@@ -68,7 +69,7 @@ Future<void> ensureBooted() async {
 void _seed(AppStore store, SettingsStore settings) {
   store.wipeAll();
   settings.currencyCode = 'USD';
-  settings.userName = 'Failas';
+  settings.userName = 'Travis';
   settings.monthlyBudget = 3000;
   settings.hasCompletedAccountSetup = true;
 
@@ -76,7 +77,7 @@ void _seed(AppStore store, SettingsStore settings) {
   DateTime days(int d) => now.add(Duration(days: d));
 
   final checking = Account(
-    name: 'HDFC Checking',
+    name: 'Chase Checking',
     type: AccountType.bank,
     currencyCode: 'USD',
     balance: 6400,
@@ -94,7 +95,7 @@ void _seed(AppStore store, SettingsStore settings) {
     balance: 320,
   );
   final card = Account(
-    name: 'ICICI Amazon Pay',
+    name: 'Amex Gold',
     type: AccountType.credit,
     currencyCode: 'USD',
     balance: 1840,
@@ -261,8 +262,8 @@ void _seed(AppStore store, SettingsStore settings) {
   );
   goal('Car Down Payment', 8000, 0, 'car.fill', 'EF4444');
 
-  final lentPriya = Debt(
-    person: 'Priya',
+  final lentJordan = Debt(
+    person: 'Jordan',
     amount: 1200,
     theyOweMe: true,
     date: days(-70),
@@ -272,7 +273,7 @@ void _seed(AppStore store, SettingsStore settings) {
   );
   store.addDebt(
     Debt(
-      person: 'Rahul',
+      person: 'Sam',
       amount: 500,
       theyOweMe: true,
       date: days(-24),
@@ -281,7 +282,7 @@ void _seed(AppStore store, SettingsStore settings) {
       note: 'Concert tickets',
     ),
   );
-  store.addDebt(lentPriya);
+  store.addDebt(lentJordan);
   store.addDebt(
     Debt(
       person: 'Dad',
@@ -291,7 +292,7 @@ void _seed(AppStore store, SettingsStore settings) {
       accountId: checking.id,
     ),
   );
-  store.repayDebt(lentPriya, 400, checking.id);
+  store.repayDebt(lentJordan, 400, checking.id);
 
   final rnd = math.Random(7);
   const spends = <(String, TransactionCategory, double, double)>[
@@ -398,7 +399,8 @@ Widget _wrap({
         data: MediaQuery.of(
           context,
         ).copyWith(textScaler: const TextScaler.linear(1.15)),
-        child: child!,
+        // Same centred column production uses on iPad and wide screens.
+        child: ReadableColumn(child: child!),
       ),
       home: home,
     ),

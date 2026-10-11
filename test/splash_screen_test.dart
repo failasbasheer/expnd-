@@ -3,29 +3,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('splash animates through press cycles without errors', (
+  testWidgets('splash is the still launch mark, with no animation', (
     tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
-    for (var i = 0; i < 40; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('E'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is ExpndMarkPainter,
+      ),
+      findsOneWidget,
+    );
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(find.bySemanticsLabel('EXPND is loading'), findsOneWidget);
     expect(find.text('by Trylas'), findsOneWidget);
-    // Unmounting mid-cycle must cancel the delayed start and stop tickers.
-    await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('splash settles immediately when animations are disabled', (
+  testWidgets('mark sits in the 200pt box the native launch screen uses', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      const MediaQuery(
-        data: MediaQueryData(disableAnimations: true),
-        child: MaterialApp(home: SplashScreen()),
+    await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
+    final box = tester.getSize(
+      find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is ExpndMarkPainter,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(tester.hasRunningAnimations, isFalse);
+    expect(box, const Size(200, 200));
   });
 }
