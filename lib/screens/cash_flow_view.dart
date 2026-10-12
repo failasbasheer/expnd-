@@ -8,6 +8,7 @@ import '../store/settings_store.dart';
 import '../theme/currencies.dart';
 import '../theme/expnd_theme.dart';
 import '../widgets/app_header.dart';
+import '../widgets/section_card.dart';
 
 Future<void> showCashFlow(BuildContext context) => Navigator.of(
   context,
@@ -194,107 +195,152 @@ class CashFlowView extends StatelessWidget {
                 style: TextStyle(color: oc.negative, fontSize: 13),
               ),
             ],
-            const SizedBox(height: 28),
-            Text(
-              'Budget period',
-              style: TextStyle(
-                color: oc.text,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
+            const SizedBox(height: 22),
+            sectionCard(
+              oc,
+              'BUDGET PERIOD',
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Choose how often your budget resets.',
+                      style: TextStyle(color: oc.muted),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(settings.budgetCycle),
+                      isExpanded: true,
+                      isDense: true,
+                      initialValue: settings.budgetCycle,
+                      decoration: const InputDecoration(
+                        labelText: 'Budget repeats',
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'calendar',
+                          child: Text('Calendar month'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'payday',
+                          child: Text('Monthly payday'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'weekly',
+                          child: Text('Weekly payday'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'fortnightly',
+                          child: Text('Every two weeks'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) settings.budgetCycle = value;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    if (settings.budgetCycle == 'calendar' ||
+                        settings.budgetCycle == 'payday')
+                      DropdownButtonFormField<int>(
+                        key: ValueKey(settings.paydayDay),
+                        isExpanded: true,
+                        isDense: true,
+                        initialValue: settings.paydayDay,
+                        decoration: const InputDecoration(
+                          labelText: 'Payday each month',
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                        ),
+                        items: [
+                          for (var day = 1; day <= 31; day++)
+                            DropdownMenuItem(
+                              value: day,
+                              child: Text('Day $day'),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) settings.paydayDay = value;
+                        },
+                      )
+                    else
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final selected = await showDatePicker(
+                            context: context,
+                            initialDate: settings.paydayConfigured
+                                ? settings.paydayAnchor
+                                : DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                            helpText: 'Choose a known payday',
+                          );
+                          if (selected != null && context.mounted) {
+                            settings.paydayAnchor = selected;
+                          }
+                        },
+                        icon: const Icon(Icons.event),
+                        label: Text(
+                          settings.paydayConfigured
+                              ? 'Known payday: ${date.format(settings.paydayAnchor)}'
+                              : 'Choose a known payday',
+                        ),
+                      ),
+                    if (!settings.paydayConfigured &&
+                        (settings.budgetCycle == 'calendar' ||
+                            settings.budgetCycle == 'payday')) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.center,
+                        child: TextButton(
+                          onPressed: () =>
+                              settings.paydayDay = settings.paydayDay,
+                          child: Text(
+                            'Confirm day ${settings.paydayDay} as my payday',
+                          ),
+                        ),
+                      ),
+                    ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Divider(height: 1, color: oc.border),
+                    ),
+                    Text(
+                      'CURRENT PERIOD',
+                      style: TextStyle(
+                        color: oc.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${date.format(period.start)} – '
+                      '${date.format(period.end.subtract(const Duration(days: 1)))}',
+                      style: TextStyle(
+                        color: oc.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      budget > 0
+                          ? '${money(spent)} spent of ${money(budget)}'
+                          : '${money(spent)} spent · No budget limit set',
+                      style: TextStyle(color: oc.muted),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your budget amount applies to each selected period.',
-              style: TextStyle(color: oc.muted),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              key: ValueKey(settings.budgetCycle),
-              isExpanded: true,
-              initialValue: settings.budgetCycle,
-              decoration: const InputDecoration(labelText: 'Budget repeats'),
-              items: const [
-                DropdownMenuItem(
-                  value: 'calendar',
-                  child: Text('Calendar month'),
-                ),
-                DropdownMenuItem(
-                  value: 'payday',
-                  child: Text('Monthly payday'),
-                ),
-                DropdownMenuItem(value: 'weekly', child: Text('Weekly payday')),
-                DropdownMenuItem(
-                  value: 'fortnightly',
-                  child: Text('Every two weeks'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) settings.budgetCycle = value;
-              },
-            ),
-            const SizedBox(height: 14),
-            if (settings.budgetCycle == 'calendar' ||
-                settings.budgetCycle == 'payday')
-              DropdownButtonFormField<int>(
-                key: ValueKey(settings.paydayDay),
-                isExpanded: true,
-                initialValue: settings.paydayDay,
-                decoration: const InputDecoration(
-                  labelText: 'Payday each month',
-                ),
-                items: [
-                  for (var day = 1; day <= 31; day++)
-                    DropdownMenuItem(value: day, child: Text('Day $day')),
-                ],
-                onChanged: (value) {
-                  if (value != null) settings.paydayDay = value;
-                },
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final selected = await showDatePicker(
-                    context: context,
-                    initialDate: settings.paydayConfigured
-                        ? settings.paydayAnchor
-                        : DateTime.now(),
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                    helpText: 'Choose a known payday',
-                  );
-                  if (selected != null && context.mounted) {
-                    settings.paydayAnchor = selected;
-                  }
-                },
-                icon: const Icon(Icons.event),
-                label: Text(
-                  settings.paydayConfigured
-                      ? 'Known payday: ${date.format(settings.paydayAnchor)}'
-                      : 'Choose a known payday',
-                ),
-              ),
-            if (!settings.paydayConfigured &&
-                (settings.budgetCycle == 'calendar' ||
-                    settings.budgetCycle == 'payday')) ...[
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => settings.paydayDay = settings.paydayDay,
-                child: Text('Confirm day ${settings.paydayDay} as my payday'),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              'Current period: ${date.format(period.start)} – '
-              '${date.format(period.end.subtract(const Duration(days: 1)))}',
-              style: TextStyle(color: oc.text, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              budget > 0
-                  ? '${money(spent)} spent of ${money(budget)}'
-                  : '${money(spent)} spent · No budget limit set',
-              style: TextStyle(color: oc.muted),
             ),
             if (settings.paydayConfigured && estimate.bills.isNotEmpty) ...[
               const SizedBox(height: 28),
@@ -317,7 +363,10 @@ class CashFlowView extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(bill.title, style: TextStyle(color: oc.text)),
+                              Text(
+                                bill.title,
+                                style: TextStyle(color: oc.text),
+                              ),
                               Text(
                                 date.format(bill.date),
                                 style: TextStyle(color: oc.muted, fontSize: 13),

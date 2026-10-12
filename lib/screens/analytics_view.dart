@@ -37,7 +37,9 @@ extension on _Period {
 }
 
 class AnalyticsView extends StatefulWidget {
-  const AnalyticsView({super.key});
+  final GlobalKey? tourKey;
+
+  const AnalyticsView({super.key, this.tourKey});
 
   @override
   State<AnalyticsView> createState() => _AnalyticsViewState();
@@ -88,7 +90,8 @@ class _AnalyticsViewState extends State<AnalyticsView> {
     return Container(
       color: oc.bg,
       child: GlassHeaderLayout(
-        header: const ExpndHeader(
+        header: ExpndHeader(
+          key: widget.tourKey,
           icon: 'chart.bar.xaxis',
           title: 'ANALYTICS',
           actions: [SettingsAvatarAction()],

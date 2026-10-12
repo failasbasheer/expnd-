@@ -91,10 +91,11 @@ Everything below is plain arithmetic over the local ledger — no network, no ac
 - **Hide amounts**: the privacy eye masks every amount and every percentage
   (`formatPercent` in `lib/theme/currencies.dart`), so shares and progress can't
   reveal totals.
-- **Getting started**: after first-run wallet setup, a guided screen leads to
-  an expense, monthly budget, and daily reminder. Steps complete from saved
-  data, and Home offers a small resume button until finished or skipped. Home
-  and History transaction filters show totals for the selected rows.
+- **Getting started**: after first-run wallet setup, a seven-step spotlight
+  tour highlights Home's monthly summary, Add button, Plan tab, privacy eye,
+  Analytics, Wallet, and Profile & settings. It can be skipped, and completion
+  is saved locally. Home and History
+  transaction filters show totals for the selected rows.
 
 New fields are optional in stored JSON and backups, so older data and backups
 still load.

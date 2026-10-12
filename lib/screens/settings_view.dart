@@ -29,8 +29,7 @@ import 'add_transaction.dart';
 /// label money with, and the app's own settings. Reached from the avatar in
 /// the header rather than a tab, because it is not somewhere you go daily.
 class SettingsView extends StatefulWidget {
-  final bool openReminders;
-  const SettingsView({super.key, this.openReminders = false});
+  const SettingsView({super.key});
 
   @override
   State<SettingsView> createState() => _SettingsViewState();
@@ -98,7 +97,6 @@ class _SettingsViewState extends State<SettingsView> {
               const SizedBox(height: 12),
               DisclosureSection(
                 title: 'Reminders & alerts',
-                initiallyExpanded: widget.openReminders,
                 icon: 'bell.fill',
                 tint: hexColor('F97316'),
                 subtitle: 'Bills, budgets and daily nudges',
@@ -151,6 +149,19 @@ class _SettingsViewState extends State<SettingsView> {
                 tint: ExpndColors.green,
                 subtitle: 'Backup, restore and export',
                 child: _dataSection(oc, store, symbol),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.play_circle_outline_rounded),
+                  label: const Text('Replay Home tour'),
+                  onPressed: () {
+                    settings.getStartedEligible = true;
+                    settings.getStartedDismissed = false;
+                    Navigator.of(context).pop();
+                  },
+                ),
               ),
             ],
           ),
@@ -2690,18 +2701,20 @@ class SettingsAvatarAction extends StatelessWidget {
             context,
           ).push(MaterialPageRoute(builder: (_) => const SettingsView()));
         },
-        // HeaderAction supplies the disc, so the initial sits on the same
-        // shape as every other header button.
+        // Keep the initial simple so the profile action uses the same
+        // rounded-square silhouette as the neighboring privacy action.
         child: SizedBox.expand(
           child: Center(
-            child: Text(
-              initial,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: oc.text,
-              ),
-            ),
+            child: initial == '?'
+                ? Icon(Icons.person_rounded, size: 19, color: oc.accent)
+                : Text(
+                    initial,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: oc.accent,
+                    ),
+                  ),
           ),
         ),
       ),

@@ -22,7 +22,7 @@ import '../widgets/neopop_cards.dart';
 import '../widgets/privacy_eye.dart';
 import '../widgets/segmented_picker.dart';
 import '../widgets/filter_totals.dart';
-import 'get_started_screen.dart';
+import '../widgets/home_tour_overlay.dart';
 import 'add_transaction.dart';
 import 'capture_inbox_view.dart';
 import 'transaction_detail.dart';
@@ -44,6 +44,46 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   ExpndTab _tab = ExpndTab.dashboard;
+  final _balanceTourKey = GlobalKey();
+  final _addTourKey = GlobalKey();
+  final _planTourKey = GlobalKey();
+  final _privacyTourKey = GlobalKey();
+  final _analyticsTourKey = GlobalKey();
+  final _walletTourKey = GlobalKey();
+  final _profileTourKey = GlobalKey();
+  int _tourStep = 0;
+  bool _tourWasEligible = false;
+
+  static const _tourCopy = [
+    (
+      'Your month at a glance',
+      'See what came in and went out. Use the month arrows to look back.',
+    ),
+    (
+      'Add money in or out',
+      'Tap the yellow plus whenever you spend or receive money.',
+    ),
+    (
+      'Give the month a plan',
+      'Set a budget here. You can adjust it whenever life changes.',
+    ),
+    (
+      'Keep amounts private',
+      'The eye hides figures in the app and on your home widget.',
+    ),
+    (
+      'Understand your patterns',
+      'Analytics brings your income, spending and trends together.',
+    ),
+    (
+      'Manage your accounts',
+      'Your Wallet keeps account balances and details in one place.',
+    ),
+    (
+      'Make EXPND yours',
+      'Open your profile for your name, currency, reminders and privacy settings.',
+    ),
+  ];
 
   // Account whose detail the wallet should open, set when a dashboard account
   // card is tapped. Cleared once the wallet has consumed it.
@@ -103,35 +143,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _selectTab(ExpndTab tab) {
     setState(() => _tab = tab);
-    final settings = context.read<SettingsStore>();
-    final showTip = tab == ExpndTab.wallet
-        ? !settings.walletTipSeen
-        : tab == ExpndTab.plan && !settings.planTipSeen;
-    if (!showTip) return;
-    if (tab == ExpndTab.wallet) settings.walletTipSeen = true;
-    if (tab == ExpndTab.plan) settings.planTipSeen = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            tab == ExpndTab.wallet
-                ? 'Tap an account to see its details.'
-                : 'Start with a monthly budget; you can add goals later.',
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    });
   }
 
-  void _openGetStarted() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => const GetStartedScreen(),
-      ),
-    );
+  void _finishTour() {
+    context.read<SettingsStore>().getStartedDismissed = true;
   }
 
   Future<void> _openAdd({Transaction? editing, String? initialText}) async {
@@ -166,82 +181,143 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final oc = context.oc;
+    final settings = context.watch<SettingsStore>();
+    final tourEligible =
+        settings.getStartedEligible && !settings.getStartedDismissed;
+    if (tourEligible && !_tourWasEligible) _tourStep = 0;
+    _tourWasEligible = tourEligible;
+    final showTour = tourEligible;
+    final tourKeys = [
+      _balanceTourKey,
+      _addTourKey,
+      _planTourKey,
+      _privacyTourKey,
+      _analyticsTourKey,
+      _walletTourKey,
+      _profileTourKey,
+    ];
+    const tourTabs = [
+      ExpndTab.dashboard,
+      ExpndTab.dashboard,
+      ExpndTab.dashboard,
+      ExpndTab.dashboard,
+      ExpndTab.analytics,
+      ExpndTab.wallet,
+      ExpndTab.wallet,
+    ];
     // Android back on a secondary tab returns to Home instead of leaving the
     // app; only Home lets the system back gesture close the activity.
     return PopScope(
-      canPop: _tab == ExpndTab.dashboard,
+      canPop: _tab == ExpndTab.dashboard && !showTour,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && mounted) setState(() => _tab = ExpndTab.dashboard);
+        if (didPop || !mounted) return;
+        if (showTour) {
+          _finishTour();
+        } else {
+          setState(() => _tab = ExpndTab.dashboard);
+        }
       },
-      child: Scaffold(
-        backgroundColor: oc.bg,
-        // The tab bar is translucent, so the body has to run underneath it —
-        // otherwise there is nothing behind the glass to blur and it just reads
-        // as a flat tint. Tab screens reserve the bar's height via
-        // [ExpndSpacing.scrollBottomUnderTabBar], which Scaffold reports to the
-        // body as MediaQuery.padding.bottom.
-        extendBody: true,
-        body: Stack(
-          children: [
-            SafeArea(
-              // Glass headers extend under the status bar themselves.
-              top: !ExpndGlass.enabled,
-              bottom: false,
-              child: _AnimatedTabStack(
-                index: _tab.index,
-                children: [
-                  _DashboardView(
-                    onAdd: () => _openAdd(),
-                    onOpenAccount: _openAccountInWallet,
-                    onOpenPlan: () => _selectTab(ExpndTab.plan),
-                    onOpenGetStarted: _openGetStarted,
-                  ),
-                  const AnalyticsView(),
-                  WalletView(
-                    focusAccountId: _walletFocus,
-                    onFocusConsumed: () {
-                      if (_walletFocus != null) {
-                        setState(() => _walletFocus = null);
-                      }
-                    },
-                  ),
-                  const PlanView(),
-                ],
-              ),
-            ),
-            // Toast
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOut,
-              top: _showToast ? MediaQuery.of(context).padding.top + 10 : -120,
-              left: 16,
-              right: 16,
-              child: AnimatedOpacity(
-                opacity: _showToast ? 1 : 0,
-                duration: const Duration(milliseconds: 250),
-                child: _recurringPosted != null
-                    ? _RecurringToast(
-                        posted: _recurringPosted!,
-                        onTap: () {
-                          setState(() => _showToast = false);
-                          showUpcoming(context);
-                        },
-                      )
-                    : _toast == null
-                    ? const SizedBox.shrink()
-                    : _ToastBanner(
-                        transaction: _toast!,
-                        overage: _toastOverage,
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: oc.bg,
+            // The tab bar is translucent, so the body has to run underneath it —
+            // otherwise there is nothing behind the glass to blur and it just reads
+            // as a flat tint. Tab screens reserve the bar's height via
+            // [ExpndSpacing.scrollBottomUnderTabBar], which Scaffold reports to the
+            // body as MediaQuery.padding.bottom.
+            extendBody: true,
+            body: Stack(
+              children: [
+                SafeArea(
+                  // Glass headers extend under the status bar themselves.
+                  top: !ExpndGlass.enabled,
+                  bottom: false,
+                  child: _AnimatedTabStack(
+                    index: _tab.index,
+                    children: [
+                      _DashboardView(
+                        onAdd: () => _openAdd(),
+                        onOpenAccount: _openAccountInWallet,
+                        onOpenPlan: () => _selectTab(ExpndTab.plan),
+                        balanceTourKey: _balanceTourKey,
+                        privacyTourKey: _privacyTourKey,
                       ),
+                      AnalyticsView(tourKey: _analyticsTourKey),
+                      WalletView(
+                        focusAccountId: _walletFocus,
+                        tourKey: _walletTourKey,
+                        profileTourKey: _profileTourKey,
+                        onFocusConsumed: () {
+                          if (_walletFocus != null) {
+                            setState(() => _walletFocus = null);
+                          }
+                        },
+                      ),
+                      const PlanView(),
+                    ],
+                  ),
+                ),
+                // Toast
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOut,
+                  top: _showToast
+                      ? MediaQuery.of(context).padding.top + 10
+                      : -120,
+                  left: 16,
+                  right: 16,
+                  child: AnimatedOpacity(
+                    opacity: _showToast ? 1 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: _recurringPosted != null
+                        ? _RecurringToast(
+                            posted: _recurringPosted!,
+                            onTap: () {
+                              setState(() => _showToast = false);
+                              showUpcoming(context);
+                            },
+                          )
+                        : _toast == null
+                        ? const SizedBox.shrink()
+                        : _ToastBanner(
+                            transaction: _toast!,
+                            overage: _toastOverage,
+                          ),
+                  ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: _TabBar(
+              selected: _tab,
+              onSelect: _selectTab,
+              onAdd: () => _openAdd(),
+              addTourKey: _addTourKey,
+              planTourKey: _planTourKey,
+            ),
+          ),
+          if (showTour)
+            Positioned.fill(
+              child: HomeTourOverlay(
+                targetKey: tourKeys[_tourStep],
+                step: _tourStep,
+                stepCount: _tourCopy.length,
+                title: _tourCopy[_tourStep].$1,
+                description: _tourCopy[_tourStep].$2,
+                onNext: () {
+                  if (_tourStep == _tourCopy.length - 1) {
+                    _finishTour();
+                  } else {
+                    setState(() {
+                      _tourStep++;
+                      _tab = tourTabs[_tourStep];
+                    });
+                  }
+                },
+                onSkip: _finishTour,
               ),
             ),
-          ],
-        ),
-        bottomNavigationBar: _TabBar(
-          selected: _tab,
-          onSelect: _selectTab,
-          onAdd: () => _openAdd(),
-        ),
+        ],
       ),
     );
   }
@@ -372,10 +448,14 @@ class _TabBar extends StatelessWidget {
   final ExpndTab selected;
   final ValueChanged<ExpndTab> onSelect;
   final VoidCallback onAdd;
+  final GlobalKey addTourKey;
+  final GlobalKey planTourKey;
   const _TabBar({
     required this.selected,
     required this.onSelect,
     required this.onAdd,
+    required this.addTourKey,
+    required this.planTourKey,
   });
 
   @override
@@ -442,6 +522,7 @@ class _TabBar extends StatelessWidget {
                           child: Tooltip(
                             message: 'Add transaction',
                             child: Semantics(
+                              key: addTourKey,
                               button: true,
                               label: 'Add transaction',
                               onTap: onAdd,
@@ -480,7 +561,13 @@ class _TabBar extends StatelessWidget {
                       'WALLET',
                       ExpndTab.wallet,
                     ),
-                    _tabButton(context, 'target', 'PLAN', ExpndTab.plan),
+                    _tabButton(
+                      context,
+                      'target',
+                      'PLAN',
+                      ExpndTab.plan,
+                      tourKey: planTourKey,
+                    ),
                   ],
                 ),
               ],
@@ -495,8 +582,9 @@ class _TabBar extends StatelessWidget {
     BuildContext context,
     String icon,
     String label,
-    ExpndTab tab,
-  ) {
+    ExpndTab tab, {
+    GlobalKey? tourKey,
+  }) {
     final active = selected == tab;
     // Inactive uses `muted`, not `dimmed` — the label is small, so it needs
     // the extra contrast to stay legible.
@@ -504,6 +592,7 @@ class _TabBar extends StatelessWidget {
     final name = label[0] + label.substring(1).toLowerCase();
     return Expanded(
       child: Semantics(
+        key: tourKey,
         button: true,
         selected: active,
         // Read as "Home tab", not letter-spaced caps.
@@ -1084,12 +1173,14 @@ class _DashboardView extends StatefulWidget {
   /// Budgets are owned by the PLAN tab, so the dashboard's budget bar hands off
   /// there rather than duplicating the controls.
   final VoidCallback onOpenPlan;
-  final VoidCallback onOpenGetStarted;
+  final GlobalKey balanceTourKey;
+  final GlobalKey privacyTourKey;
   const _DashboardView({
     required this.onAdd,
     required this.onOpenAccount,
     required this.onOpenPlan,
-    required this.onOpenGetStarted,
+    required this.balanceTourKey,
+    required this.privacyTourKey,
   });
 
   @override
@@ -1141,14 +1232,6 @@ class _DashboardViewState extends State<_DashboardView> {
     final filtered = _filter == null
         ? monthTx
         : monthTx.where((t) => t.type == _filter).toList();
-
-    final showGetStarted =
-        settings.getStartedEligible &&
-        !settings.getStartedDismissed &&
-        !(store.accounts.isNotEmpty &&
-            store.transactions.any((t) => t.type == TransactionType.expense) &&
-            settings.monthlyBudget > 0 &&
-            settings.dailyReminder);
 
     final todaySpent = store.transactions
         .where((t) => t.type == TransactionType.expense && _isToday(t.date))
@@ -1206,24 +1289,18 @@ class _DashboardViewState extends State<_DashboardView> {
               ExpndSpacing.scrollBottomUnderTabBar(context),
             ),
             children: [
-              if (_isCurrentMonth && showGetStarted)
-                _slot(
-                  0,
-                  OutlinedButton.icon(
-                    onPressed: widget.onOpenGetStarted,
-                    icon: const Icon(Icons.checklist_rounded, size: 18),
-                    label: const Text('Continue setup'),
-                  ),
-                ),
               _slot(
                 1,
-                _balanceHero(
-                  context,
-                  balance,
-                  income,
-                  expenses,
-                  lastMonthNet,
-                  code,
+                KeyedSubtree(
+                  key: widget.balanceTourKey,
+                  child: _balanceHero(
+                    context,
+                    balance,
+                    income,
+                    expenses,
+                    lastMonthNet,
+                    code,
+                  ),
                 ),
               ),
               _slot(
@@ -1319,12 +1396,15 @@ class _DashboardViewState extends State<_DashboardView> {
   // Page title and month navigation share the header system used by every tab.
   Widget _header(BuildContext context, int upcomingCount) {
     final oc = context.oc;
+    final amountsHidden = context.watch<SettingsStore>().amountsHidden;
     return ExpndHeader(
       leading: const _GreetingIdentity(),
       actions: [
         HeaderAction.custom(
           semanticLabel: 'Hide or show amounts',
+          selected: amountsHidden,
           child: PrivacyEyeButton(
+            key: widget.privacyTourKey,
             color: oc.muted,
             size: 19,
             padding: const EdgeInsets.all(12.5),
@@ -1344,11 +1424,13 @@ class _DashboardViewState extends State<_DashboardView> {
   /// actions, and the separate greeting and month strip fold away.
   Widget _compactHeader(BuildContext context) {
     final oc = context.oc;
+    final amountsHidden = context.watch<SettingsStore>().amountsHidden;
     return ExpndHeader(
       title: _monthLabel(_displayMonth),
       actions: [
         HeaderAction.custom(
           semanticLabel: 'Hide or show amounts',
+          selected: amountsHidden,
           child: PrivacyEyeButton(
             color: oc.muted,
             size: 19,

@@ -32,18 +32,6 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get walletTipSeen => _b('walletTipSeen', false);
-  set walletTipSeen(bool value) {
-    _p.setBool('walletTipSeen', value);
-    notifyListeners();
-  }
-
-  bool get planTipSeen => _b('planTipSeen', false);
-  set planTipSeen(bool value) {
-    _p.setBool('planTipSeen', value);
-    notifyListeners();
-  }
-
   // appearanceMode: "system" | "light" | "dark"
   // neoPOP is a dark-first design language, so default to dark.
   String get appearanceMode => _s('appearanceMode', 'dark');

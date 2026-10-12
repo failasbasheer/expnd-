@@ -12,7 +12,6 @@ import '../widgets/neopop.dart';
 import '../widgets/money_field.dart';
 import '../widgets/neopop_cards.dart';
 import 'whats_new.dart';
-import 'get_started_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Onboarding (first launch)
@@ -54,12 +53,7 @@ class _AccountOnboardingState extends State<AccountOnboarding> {
     // A fresh install is meeting these features for the first time, so it has
     // no "what's new" to catch up on — stamp the current version as seen.
     settings.whatsNewSeenVersion = kWhatsNewVersion;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => const GetStartedScreen(),
-      ),
-    );
+    Navigator.of(context).pop();
   }
 
   void _saveAccounts() {

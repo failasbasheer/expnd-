@@ -134,6 +134,7 @@ class HeaderAction extends StatelessWidget {
   final VoidCallback? onPressed;
   final String semanticLabel;
   final bool primary;
+  final bool selected;
 
   /// Small gold dot on the corner — "there's something waiting in here".
   final bool badge;
@@ -149,6 +150,7 @@ class HeaderAction extends StatelessWidget {
     required this.onPressed,
     required this.semanticLabel,
     this.primary = false,
+    this.selected = false,
     this.badge = false,
   }) : child = null;
 
@@ -157,6 +159,7 @@ class HeaderAction extends StatelessWidget {
     required this.child,
     required this.semanticLabel,
     this.badge = false,
+    this.selected = false,
   }) : icon = null,
        onPressed = null,
        primary = false;
@@ -165,18 +168,21 @@ class HeaderAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final oc = context.oc;
     const size = ExpndHeaderMetrics.action;
-    // Every header action wears the same 36pt disc inside its 44pt tap box —
-    // the eye, the add button, close and the avatar used to be three different
-    // shapes in one corner. The primary action keeps a gold tint.
+    // Header actions use the app's rounded-square button shape, scaled down
+    // from the larger NeoPOP actions used in the body.
     final disc = Center(
       child: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: primary ? oc.accent.withValues(alpha: 0.14) : oc.card,
+          borderRadius: BorderRadius.circular(11),
+          color: primary || selected
+              ? oc.accent.withValues(alpha: 0.14)
+              : oc.card,
           border: Border.all(
-            color: primary ? oc.accent.withValues(alpha: 0.35) : oc.border,
+            color: primary || selected
+                ? oc.accent.withValues(alpha: 0.55)
+                : oc.border,
           ),
         ),
       ),
@@ -192,7 +198,7 @@ class HeaderAction extends StatelessWidget {
               IconButton(
                 onPressed: onPressed,
                 style: IconButton.styleFrom(
-                  foregroundColor: primary ? oc.accent : oc.muted,
+                  foregroundColor: primary || selected ? oc.accent : oc.muted,
                   backgroundColor: Colors.transparent,
                   shape: const CircleBorder(),
                   padding: EdgeInsets.zero,

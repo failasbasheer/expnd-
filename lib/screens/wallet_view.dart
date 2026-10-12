@@ -32,7 +32,15 @@ class WalletView extends StatefulWidget {
   /// the request so tapping the same card again re-triggers the focus.
   final String? focusAccountId;
   final VoidCallback? onFocusConsumed;
-  const WalletView({super.key, this.focusAccountId, this.onFocusConsumed});
+  final GlobalKey? tourKey;
+  final GlobalKey? profileTourKey;
+  const WalletView({
+    super.key,
+    this.focusAccountId,
+    this.onFocusConsumed,
+    this.tourKey,
+    this.profileTourKey,
+  });
 
   @override
   State<WalletView> createState() => _WalletViewState();
@@ -360,6 +368,7 @@ class _WalletViewState extends State<WalletView> {
 
   Widget _titleBar(List<Account> accounts) {
     return ExpndHeader(
+      key: widget.tourKey,
       icon: 'creditcard.fill',
       title: 'Wallet',
       actions: [
@@ -378,7 +387,7 @@ class _WalletViewState extends State<WalletView> {
               showAddAccount(context);
             },
           ),
-        const SettingsAvatarAction(),
+        SettingsAvatarAction(key: widget.profileTourKey),
       ],
     );
   }

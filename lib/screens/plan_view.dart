@@ -36,8 +36,7 @@ import 'reimbursements_view.dart';
 /// taxonomy and app settings in one 4k-line scroll. Profile kept the settings;
 /// this tab took the money.
 class PlanView extends StatefulWidget {
-  final bool showClose;
-  const PlanView({super.key, this.showClose = false});
+  const PlanView({super.key});
 
   @override
   State<PlanView> createState() => _PlanViewState();
@@ -82,19 +81,10 @@ class _PlanViewState extends State<PlanView> {
     return Container(
       color: oc.bg,
       child: GlassHeaderLayout(
-        header: ExpndHeader(
+        header: const ExpndHeader(
           icon: 'target',
           title: 'PLAN',
-          actions: [
-            if (widget.showClose)
-              HeaderAction(
-                icon: 'xmark',
-                onPressed: () => Navigator.of(context).maybePop(),
-                semanticLabel: 'Close plan',
-              )
-            else
-              const SettingsAvatarAction(),
-          ],
+          actions: [SettingsAvatarAction()],
         ),
         body: (context, top) => ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
